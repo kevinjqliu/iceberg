@@ -68,7 +68,6 @@ public class SparkWriteOptions {
 
   public static final String MERGE_SCHEMA = "merge-schema";
   public static final String SPARK_MERGE_SCHEMA = "mergeSchema";
-  public static final boolean MERGE_SCHEMA_DEFAULT = false;
 
   // Identifies snapshot from which to start validating conflicting changes
   public static final String VALIDATE_FROM_SNAPSHOT_ID = "validate-from-snapshot-id";
@@ -83,4 +82,7 @@ public class SparkWriteOptions {
 
   // Overrides the advisory partition size
   public static final String ADVISORY_PARTITION_SIZE = "advisory-partition-size";
+
+  // Overrides the delete granularity
+  public static final String DELETE_GRANULARITY = "delete-granularity";
 }

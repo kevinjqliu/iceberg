@@ -40,6 +40,8 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 
 public class TypeUtil {
 
+  private static final int HEADER_SIZE = 12;
+
   private TypeUtil() {}
 
   /**
@@ -179,11 +181,36 @@ public class TypeUtil {
     return indexer.byId();
   }
 
+  /**
+   * Creates a mapping from lower-case field names to their corresponding field IDs.
+   *
+   * <p>This method iterates over the fields of the provided struct and maps each field's name
+   * (converted to lower-case) to its ID. If two fields have the same lower-case name, an
+   * `IllegalArgumentException` is thrown.
+   *
+   * @param struct the struct type whose fields are to be indexed
+   * @return a map where the keys are lower-case field names and the values are field IDs
+   * @throws IllegalArgumentException if two fields have the same lower-case name
+   */
   public static Map<String, Integer> indexByLowerCaseName(Types.StructType struct) {
     Map<String, Integer> indexByLowerCaseName = Maps.newHashMap();
+
+    IndexByName indexer = new IndexByName();
+    visit(struct, indexer);
+    Map<Integer, String> byId = indexer.byId();
+
     indexByName(struct)
         .forEach(
-            (name, integer) -> indexByLowerCaseName.put(name.toLowerCase(Locale.ROOT), integer));
+            (name, fieldId) -> {
+              String key = name.toLowerCase(Locale.ROOT);
+              Integer existingId = indexByLowerCaseName.put(key, fieldId);
+              Preconditions.checkArgument(
+                  existingId == null || existingId.equals(fieldId),
+                  "Cannot build lower case index: %s and %s collide",
+                  byId.get(existingId),
+                  byId.get(fieldId));
+              indexByLowerCaseName.put(key, fieldId);
+            });
     return indexByLowerCaseName;
   }
 
@@ -353,6 +380,17 @@ public class TypeUtil {
     return new Schema(struct.fields(), refreshIdentifierFields(struct, schema));
   }
 
+  /**
+   * Assigns fresh ids from the {@link GetID getId function} for all fields in a type.
+   *
+   * @param type a type
+   * @param getId an id assignment function
+   * @return an structurally identical type with new ids assigned by the getId function
+   */
+  public static Type assignIds(Type type, GetID getId) {
+    return TypeUtil.visit(type, new AssignIds(getId));
+  }
+
   public static Type find(Schema schema, Predicate<Type> predicate) {
     return visit(schema, new FindTypeVisitor(predicate));
   }
@@ -452,9 +490,77 @@ public class TypeUtil {
     }
   }
 
+  /**
+   * Estimates the number of bytes a value for a given field may occupy in memory.
+   *
+   * <p>This method approximates the memory size based on heuristics and the internal Java
+   * representation defined by {@link Type.TypeID}. It is important to note that the actual size
+   * might differ from this estimation. The method is designed to handle a variety of data types,
+   * including primitive types, strings, and nested types such as structs, maps, and lists.
+   *
+   * @param field a field for which to estimate the size
+   * @return the estimated size in bytes of the field's value in memory
+   */
+  public static int estimateSize(Types.NestedField field) {
+    return estimateSize(field.type());
+  }
+
+  private static int estimateSize(Type type) {
+    switch (type.typeId()) {
+      case BOOLEAN:
+        // the size of a boolean variable is virtual machine dependent
+        // it is common to believe booleans occupy 1 byte in most JVMs
+        return 1;
+      case INTEGER:
+      case FLOAT:
+      case DATE:
+        // ints and floats occupy 4 bytes
+        // dates are internally represented as ints
+        return 4;
+      case LONG:
+      case DOUBLE:
+      case TIME:
+      case TIMESTAMP:
+      case TIMESTAMP_NANO:
+        // longs and doubles occupy 8 bytes
+        // times and timestamps are internally represented as longs
+        return 8;
+      case STRING:
+        // 12 (header) + 6 (fields) + 16 (array overhead) + 20 (10 chars, 2 bytes each) = 54 bytes
+        return 54;
+      case UUID:
+        // 12 (header) + 16 (two long variables) = 28 bytes
+        return 28;
+      case FIXED:
+        return ((Types.FixedType) type).length();
+      case BINARY:
+        return 80;
+      case DECIMAL:
+        // 12 (header) + (12 + 12 + 4) (BigInteger) + 4 (scale) = 44 bytes
+        return 44;
+      case STRUCT:
+        Types.StructType struct = (Types.StructType) type;
+        return HEADER_SIZE + struct.fields().stream().mapToInt(TypeUtil::estimateSize).sum();
+      case LIST:
+        Types.ListType list = (Types.ListType) type;
+        return HEADER_SIZE + 5 * estimateSize(list.elementType());
+      case MAP:
+        Types.MapType map = (Types.MapType) type;
+        int entrySize = HEADER_SIZE + estimateSize(map.keyType()) + estimateSize(map.valueType());
+        return HEADER_SIZE + 5 * entrySize;
+      default:
+        return 16;
+    }
+  }
+
   /** Interface for passing a function that assigns column IDs. */
   public interface NextID {
     int get();
+  }
+
+  /** Interface for passing a function that assigns column IDs from the previous Id. */
+  public interface GetID {
+    int get(int oldId);
   }
 
   public static class SchemaVisitor<T> {

@@ -23,6 +23,9 @@ project(':iceberg-mr') {
       exclude group: 'org.apache.parquet', module: 'parquet-hadoop-bundle'
     }
   }
+  test {
+    useJUnitPlatform()
+  }
 
   dependencies {
     implementation project(path: ':iceberg-bundled-guava', configuration: 'shadow')
@@ -65,6 +68,7 @@ project(':iceberg-mr') {
     testImplementation libs.avro.avro
     testImplementation libs.calcite.core
     testImplementation libs.kryo.shaded
+    testImplementation platform(libs.jackson.bom)
     testImplementation libs.jackson.annotations
     testImplementation(libs.hive2.service) {
       exclude group: 'org.apache.hive', module: 'hive-exec'

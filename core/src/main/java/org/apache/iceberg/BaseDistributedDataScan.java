@@ -38,6 +38,7 @@ import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.metrics.ScanMetricsUtil;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
+import org.apache.iceberg.util.ContentFileUtil;
 import org.apache.iceberg.util.ParallelIterable;
 import org.apache.iceberg.util.TableScanUtil;
 import org.apache.iceberg.util.ThreadPools;
@@ -146,7 +147,7 @@ abstract class BaseDistributedDataScan
     Snapshot snapshot = snapshot();
 
     List<ManifestFile> deleteManifests = findMatchingDeleteManifests(snapshot);
-    boolean mayHaveEqualityDeletes = deleteManifests.size() > 0 && mayHaveEqualityDeletes(snapshot);
+    boolean mayHaveEqualityDeletes = !deleteManifests.isEmpty() && mayHaveEqualityDeletes(snapshot);
     boolean planDeletesLocally = shouldPlanDeletesLocally(deleteManifests, mayHaveEqualityDeletes);
 
     List<ManifestFile> dataManifests = findMatchingDataManifests(snapshot);
@@ -368,12 +369,16 @@ abstract class BaseDistributedDataScan
           ScanMetricsUtil.fileTask(scanMetrics(), dataFile, deleteFiles);
 
           return new BaseFileScanTask(
-              copyDataFiles ? dataFile.copy(shouldReturnColumnStats()) : dataFile,
+              copyDataFiles ? copy(dataFile) : dataFile,
               deleteFiles,
               schemaString,
               specString,
               residuals);
         });
+  }
+
+  private <F extends ContentFile<F>> F copy(F file) {
+    return ContentFileUtil.copy(file, shouldReturnColumnStats(), columnsToKeepStats());
   }
 
   private ManifestEvaluator newManifestEvaluator(PartitionSpec spec) {
@@ -396,8 +401,14 @@ abstract class BaseDistributedDataScan
     return count == null || !count.equals("0");
   }
 
-  // a monitor pool that enables planing data and deletes concurrently if remote planning is used
+  /**
+   * Creates a monitor pool that enables planing data and deletes concurrently if remote planning is
+   * used
+   *
+   * <p><b>Important:</b> Callers are responsible for shutting down the returned executor service
+   * when it is no longer needed
+   */
   private ExecutorService newMonitorPool() {
-    return ThreadPools.newWorkerPool("iceberg-planning-monitor-service", MONITOR_POOL_SIZE);
+    return ThreadPools.newFixedThreadPool("iceberg-planning-monitor-service", MONITOR_POOL_SIZE);
   }
 }

@@ -27,6 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.catalog.Catalog;
+import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.common.DynClasses;
 import org.apache.iceberg.common.DynConstructors;
 import org.apache.iceberg.common.DynMethods;
@@ -46,6 +47,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.Tasks;
 import org.apache.iceberg.util.ThreadPools;
+import org.apache.iceberg.view.ViewMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,10 +69,16 @@ public class CatalogUtil {
   public static final String ICEBERG_CATALOG_TYPE_HADOOP = "hadoop";
   public static final String ICEBERG_CATALOG_TYPE_HIVE = "hive";
   public static final String ICEBERG_CATALOG_TYPE_REST = "rest";
+  public static final String ICEBERG_CATALOG_TYPE_GLUE = "glue";
+  public static final String ICEBERG_CATALOG_TYPE_NESSIE = "nessie";
+  public static final String ICEBERG_CATALOG_TYPE_JDBC = "jdbc";
 
   public static final String ICEBERG_CATALOG_HADOOP = "org.apache.iceberg.hadoop.HadoopCatalog";
   public static final String ICEBERG_CATALOG_HIVE = "org.apache.iceberg.hive.HiveCatalog";
   public static final String ICEBERG_CATALOG_REST = "org.apache.iceberg.rest.RESTCatalog";
+  public static final String ICEBERG_CATALOG_GLUE = "org.apache.iceberg.aws.glue.GlueCatalog";
+  public static final String ICEBERG_CATALOG_NESSIE = "org.apache.iceberg.nessie.NessieCatalog";
+  public static final String ICEBERG_CATALOG_JDBC = "org.apache.iceberg.jdbc.JdbcCatalog";
 
   private CatalogUtil() {}
 
@@ -117,7 +125,34 @@ public class CatalogUtil {
         Iterables.transform(metadata.previousFiles(), TableMetadata.MetadataLogEntry::file),
         "previous metadata",
         true);
+    deleteFiles(
+        io,
+        Iterables.transform(metadata.statisticsFiles(), StatisticsFile::path),
+        "statistics",
+        true);
+    deleteFiles(
+        io,
+        Iterables.transform(metadata.partitionStatisticsFiles(), PartitionStatisticsFile::path),
+        "partition statistics",
+        true);
     deleteFile(io, metadata.metadataFileLocation(), "metadata");
+  }
+
+  /**
+   * Drops view metadata files referenced by ViewMetadata.
+   *
+   * <p>This should be called by dropView implementations
+   *
+   * @param io a FileIO to use for deletes
+   * @param metadata the last valid ViewMetadata instance for a dropped view.
+   */
+  public static void dropViewMetadata(FileIO io, ViewMetadata metadata) {
+    boolean gcEnabled =
+        PropertyUtil.propertyAsBoolean(metadata.properties(), GC_ENABLED, GC_ENABLED_DEFAULT);
+
+    if (gcEnabled) {
+      deleteFile(io, metadata.metadataFileLocation(), "metadata");
+    }
   }
 
   @SuppressWarnings("DangerousStringInternUsage")
@@ -268,6 +303,15 @@ public class CatalogUtil {
         case ICEBERG_CATALOG_TYPE_REST:
           catalogImpl = ICEBERG_CATALOG_REST;
           break;
+        case ICEBERG_CATALOG_TYPE_GLUE:
+          catalogImpl = ICEBERG_CATALOG_GLUE;
+          break;
+        case ICEBERG_CATALOG_TYPE_NESSIE:
+          catalogImpl = ICEBERG_CATALOG_NESSIE;
+          break;
+        case ICEBERG_CATALOG_TYPE_JDBC:
+          catalogImpl = ICEBERG_CATALOG_JDBC;
+          break;
         default:
           throw new UnsupportedOperationException("Unknown catalog type: " + catalogType);
       }
@@ -281,7 +325,7 @@ public class CatalogUtil {
           catalogImpl);
     }
 
-    return CatalogUtil.loadCatalog(catalogImpl, name, options, conf);
+    return loadCatalog(catalogImpl, name, options, conf);
   }
 
   /**
@@ -309,7 +353,7 @@ public class CatalogUtil {
               .buildChecked();
     } catch (NoSuchMethodException e) {
       throw new IllegalArgumentException(
-          String.format("Cannot initialize FileIO, missing no-arg constructor: %s", impl), e);
+          String.format("Cannot initialize FileIO implementation %s: %s", impl, e.getMessage()), e);
     }
 
     FileIO fileIO;
@@ -447,5 +491,28 @@ public class CatalogUtil {
     reporter.initialize(properties);
 
     return reporter;
+  }
+
+  public static String fullTableName(String catalogName, TableIdentifier identifier) {
+    StringBuilder sb = new StringBuilder();
+
+    if (catalogName.contains("/") || catalogName.contains(":")) {
+      // use / for URI-like names: thrift://host:port/db.table
+      sb.append(catalogName);
+      if (!catalogName.endsWith("/")) {
+        sb.append("/");
+      }
+    } else {
+      // use . for non-URI named catalogs: prod.db.table
+      sb.append(catalogName).append(".");
+    }
+
+    for (String level : identifier.namespace().levels()) {
+      sb.append(level).append(".");
+    }
+
+    sb.append(identifier.name());
+
+    return sb.toString();
   }
 }

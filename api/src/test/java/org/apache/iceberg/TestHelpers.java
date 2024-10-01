@@ -38,6 +38,7 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.IntStream;
 import org.apache.iceberg.expressions.BoundPredicate;
 import org.apache.iceberg.expressions.BoundSetPredicate;
@@ -46,7 +47,6 @@ import org.apache.iceberg.expressions.ExpressionVisitors;
 import org.apache.iceberg.expressions.UnboundPredicate;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.util.ByteBuffers;
-import org.assertj.core.api.Assertions;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 
 public class TestHelpers {
@@ -109,9 +109,7 @@ public class TestHelpers {
   }
 
   public static void assertSameSchemaList(List<Schema> list1, List<Schema> list2) {
-    Assertions.assertThat(list1)
-        .as("Should have same number of schemas in both lists")
-        .hasSameSizeAs(list2);
+    assertThat(list1).as("Should have same number of schemas in both lists").hasSameSizeAs(list2);
 
     IntStream.range(0, list1.size())
         .forEach(
@@ -150,9 +148,7 @@ public class TestHelpers {
   }
 
   public static void assertSameSchemaMap(Map<Integer, Schema> map1, Map<Integer, Schema> map2) {
-    Assertions.assertThat(map1)
-        .as("Should have same number of schemas in both maps")
-        .hasSameSizeAs(map2);
+    assertThat(map1).as("Should have same number of schemas in both maps").hasSameSizeAs(map2);
 
     map1.forEach(
         (schemaId, schema1) -> {
@@ -226,6 +222,7 @@ public class TestHelpers {
       return obj;
     }
   }
+
   /**
    * Serializes an {@link Object} to a byte array for storage/serialization.
    *
@@ -263,6 +260,10 @@ public class TestHelpers {
     try (ObjectOutputStream out = new ObjectOutputStream(outputStream)) {
       out.writeObject(obj);
     }
+  }
+
+  public static ExpectedSpecBuilder newExpectedSpecBuilder() {
+    return new ExpectedSpecBuilder();
   }
 
   public static class KryoHelpers {
@@ -352,6 +353,52 @@ public class TestHelpers {
     @Override
     public int hashCode() {
       return Arrays.hashCode(values);
+    }
+  }
+
+  // similar to Row but has its own hashCode() and equals() implementations
+  // it is useful for testing custom collections that rely on wrappers
+  public static class CustomRow implements StructLike {
+    public static CustomRow of(Object... values) {
+      return new CustomRow(values);
+    }
+
+    private final Object[] values;
+
+    private CustomRow(Object... values) {
+      this.values = values;
+    }
+
+    @Override
+    public int size() {
+      return values.length;
+    }
+
+    @Override
+    public <T> T get(int pos, Class<T> javaClass) {
+      return javaClass.cast(values[pos]);
+    }
+
+    @Override
+    public <T> void set(int pos, T value) {
+      values[pos] = value;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      } else if (other == null || getClass() != other.getClass()) {
+        return false;
+      }
+
+      CustomRow that = (CustomRow) other;
+      return Arrays.equals(values, that.values);
+    }
+
+    @Override
+    public int hashCode() {
+      return 17 * Arrays.hashCode(values);
     }
   }
 
@@ -663,8 +710,49 @@ public class TestHelpers {
     }
 
     @Override
+    public DataFile copyWithStats(Set<Integer> requestedColumns) {
+      return this;
+    }
+
+    @Override
     public List<Long> splitOffsets() {
       return null;
+    }
+  }
+
+  public static class ExpectedSpecBuilder {
+    private final UnboundPartitionSpec.Builder unboundPartitionSpecBuilder;
+
+    private Schema schema;
+
+    private ExpectedSpecBuilder() {
+      this.unboundPartitionSpecBuilder = UnboundPartitionSpec.builder();
+    }
+
+    public ExpectedSpecBuilder withSchema(Schema newSchema) {
+      this.schema = newSchema;
+      return this;
+    }
+
+    public ExpectedSpecBuilder withSpecId(int newSpecId) {
+      unboundPartitionSpecBuilder.withSpecId(newSpecId);
+      return this;
+    }
+
+    public ExpectedSpecBuilder addField(
+        String transformAsString, int sourceId, int partitionId, String name) {
+      unboundPartitionSpecBuilder.addField(transformAsString, sourceId, partitionId, name);
+      return this;
+    }
+
+    public ExpectedSpecBuilder addField(String transformAsString, int sourceId, String name) {
+      unboundPartitionSpecBuilder.addField(transformAsString, sourceId, name);
+      return this;
+    }
+
+    public PartitionSpec build() {
+      Preconditions.checkNotNull(schema, "Field schema is missing");
+      return unboundPartitionSpecBuilder.build().bind(schema);
     }
   }
 }

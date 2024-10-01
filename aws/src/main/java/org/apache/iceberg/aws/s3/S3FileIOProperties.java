@@ -24,9 +24,11 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.aws.AwsClientProperties;
 import org.apache.iceberg.aws.glue.GlueCatalog;
 import org.apache.iceberg.aws.s3.signer.S3V4RestSignerClient;
+import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
@@ -34,6 +36,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.util.PropertyUtil;
 import org.apache.iceberg.util.SerializableMap;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.client.config.SdkAdvancedClientOption;
 import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.S3Configuration;
@@ -49,6 +52,28 @@ public class S3FileIOProperties implements Serializable {
    * provide backward compatibility.
    */
   public static final String CLIENT_FACTORY = "s3.client-factory-impl";
+
+  /**
+   * This property is used to enable using the S3 Access Grants product to control authorization to
+   * S3 data. More information regarding this feature can be found at:
+   * https://aws.amazon.com/s3/features/access-grants/.
+   */
+  public static final String S3_ACCESS_GRANTS_ENABLED = "s3.access-grants.enabled";
+
+  public static final boolean S3_ACCESS_GRANTS_ENABLED_DEFAULT = false;
+
+  /**
+   * The fallback-to-iam property allows users to customize whether or not they would like their
+   * jobs fall back to the Job Execution IAM role in case they get an Access Denied from the S3
+   * Access Grants call. Further documentation regarding this flag can be found in the S3 Access
+   * Grants Plugin GitHub:
+   *
+   * <p>For more details, see: https://github.com/aws/aws-s3-accessgrants-plugin-java-v2
+   */
+  public static final String S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED =
+      "s3.access-grants.fallback-to-iam";
+
+  public static final boolean S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED_DEFAULT = false;
 
   /**
    * Type of S3 Server side encryption used, default to {@link S3FileIOProperties#SSE_TYPE_NONE}.
@@ -68,6 +93,14 @@ public class S3FileIOProperties implements Serializable {
   public static final String SSE_TYPE_KMS = "kms";
 
   /**
+   * S3 DSSE-KMS encryption.
+   *
+   * <p>For more details:
+   * https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingDSSEncryption.html
+   */
+  public static final String DSSE_TYPE_KMS = "dsse-kms";
+
+  /**
    * S3 SSE-S3 encryption.
    *
    * <p>For more details:
@@ -84,9 +117,9 @@ public class S3FileIOProperties implements Serializable {
   public static final String SSE_TYPE_CUSTOM = "custom";
 
   /**
-   * If S3 encryption type is SSE-KMS, input is a KMS Key ID or ARN. In case this property is not
-   * set, default key "aws/s3" is used. If encryption type is SSE-C, input is a custom base-64
-   * AES256 symmetric key.
+   * If S3 encryption type is SSE-KMS or DSSE-KMS, input is a KMS Key ID or ARN. In case this
+   * property is not set, default key "aws/s3" is used. If encryption type is SSE-C, input is a
+   * custom base-64 AES256 symmetric key.
    */
   public static final String SSE_KEY = "s3.sse.key";
 
@@ -250,7 +283,7 @@ public class S3FileIOProperties implements Serializable {
    * catalog property. After set, x-amz-storage-class header will be set to this property
    *
    * <p>For more details, see
-   * https://docs.aws.amazon.com/zh_cn/AmazonS3/latest/userguide/storage-class-intro.html
+   * https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html
    *
    * <p>Example: s3.write.storage-class=INTELLIGENT_TIERING
    */
@@ -352,12 +385,22 @@ public class S3FileIOProperties implements Serializable {
 
   public static final boolean PRELOAD_CLIENT_ENABLED_DEFAULT = false;
 
+  /**
+   * User Agent Prefix set by the S3 client.
+   *
+   * <p>This allows developers to monitor which version of Iceberg they have deployed to a cluster
+   * (for example, through the S3 Access Logs, which contain the user agent field).
+   */
+  private static final String S3_FILE_IO_USER_AGENT = "s3fileio/" + EnvironmentContext.get();
+
   private String sseType;
   private String sseKey;
   private String sseMd5;
-  private String accessKeyId;
-  private String secretAccessKey;
-  private String sessionToken;
+  private final String accessKeyId;
+  private final String secretAccessKey;
+  private final String sessionToken;
+  private boolean isS3AccessGrantsEnabled;
+  private boolean isS3AccessGrantsFallbackToIamEnabled;
   private int multipartUploadThreads;
   private int multiPartSize;
   private int deleteBatchSize;
@@ -373,11 +416,11 @@ public class S3FileIOProperties implements Serializable {
   private boolean isDeleteEnabled;
   private final Map<String, String> bucketToAccessPointMapping;
   private boolean isPreloadClientEnabled;
-  private boolean isDualStackEnabled;
-  private boolean isPathStyleAccess;
-  private boolean isUseArnRegionEnabled;
-  private boolean isAccelerationEnabled;
-  private String endpoint;
+  private final boolean isDualStackEnabled;
+  private final boolean isPathStyleAccess;
+  private final boolean isUseArnRegionEnabled;
+  private final boolean isAccelerationEnabled;
+  private final String endpoint;
   private final boolean isRemoteSigningEnabled;
   private String writeStorageClass;
   private final Map<String, String> allProperties;
@@ -410,6 +453,8 @@ public class S3FileIOProperties implements Serializable {
     this.isUseArnRegionEnabled = USE_ARN_REGION_ENABLED_DEFAULT;
     this.isAccelerationEnabled = ACCELERATION_ENABLED_DEFAULT;
     this.isRemoteSigningEnabled = REMOTE_SIGNING_ENABLED_DEFAULT;
+    this.isS3AccessGrantsEnabled = S3_ACCESS_GRANTS_ENABLED_DEFAULT;
+    this.isS3AccessGrantsFallbackToIamEnabled = S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED_DEFAULT;
     this.allProperties = Maps.newHashMap();
 
     ValidationException.check(
@@ -500,6 +545,14 @@ public class S3FileIOProperties implements Serializable {
             properties, REMOTE_SIGNING_ENABLED, REMOTE_SIGNING_ENABLED_DEFAULT);
     this.writeStorageClass = properties.get(WRITE_STORAGE_CLASS);
     this.allProperties = SerializableMap.copyOf(properties);
+    this.isS3AccessGrantsEnabled =
+        PropertyUtil.propertyAsBoolean(
+            properties, S3_ACCESS_GRANTS_ENABLED, S3_ACCESS_GRANTS_ENABLED_DEFAULT);
+    this.isS3AccessGrantsFallbackToIamEnabled =
+        PropertyUtil.propertyAsBoolean(
+            properties,
+            S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED,
+            S3_ACCESS_GRANTS_FALLBACK_TO_IAM_ENABLED_DEFAULT);
 
     ValidationException.check(
         keyIdAccessKeyBothConfigured(),
@@ -684,6 +737,22 @@ public class S3FileIOProperties implements Serializable {
         .collect(Collectors.toSet());
   }
 
+  public boolean isS3AccessGrantsEnabled() {
+    return isS3AccessGrantsEnabled;
+  }
+
+  public void setS3AccessGrantsEnabled(boolean s3AccessGrantsEnabled) {
+    this.isS3AccessGrantsEnabled = s3AccessGrantsEnabled;
+  }
+
+  public boolean isS3AccessGrantsFallbackToIamEnabled() {
+    return isS3AccessGrantsFallbackToIamEnabled;
+  }
+
+  public void setS3AccessGrantsFallbackToIamEnabled(boolean s3AccessGrantsFallbackToIamEnabled) {
+    this.isS3AccessGrantsFallbackToIamEnabled = s3AccessGrantsFallbackToIamEnabled;
+  }
+
   private boolean keyIdAccessKeyBothConfigured() {
     return (accessKeyId == null) == (secretAccessKey == null);
   }
@@ -728,10 +797,15 @@ public class S3FileIOProperties implements Serializable {
    */
   public <T extends S3ClientBuilder> void applySignerConfiguration(T builder) {
     if (isRemoteSigningEnabled) {
+      ClientOverrideConfiguration.Builder configBuilder =
+          null != builder.overrideConfiguration()
+              ? builder.overrideConfiguration().toBuilder()
+              : ClientOverrideConfiguration.builder();
       builder.overrideConfiguration(
-          c ->
-              c.putAdvancedOption(
-                  SdkAdvancedClientOption.SIGNER, S3V4RestSignerClient.create(allProperties)));
+          configBuilder
+              .putAdvancedOption(
+                  SdkAdvancedClientOption.SIGNER, S3V4RestSignerClient.create(allProperties))
+              .build());
     }
   }
 
@@ -747,6 +821,56 @@ public class S3FileIOProperties implements Serializable {
   public <T extends S3ClientBuilder> void applyEndpointConfigurations(T builder) {
     if (endpoint != null) {
       builder.endpointOverride(URI.create(endpoint));
+    }
+  }
+
+  /**
+   * Add the S3 Access Grants Plugin for an S3 client.
+   *
+   * <p>Sample usage:
+   *
+   * <pre>
+   *     S3Client.builder().applyMutation(s3FileIOProperties::applyS3AccessGrantsConfigurations)
+   * </pre>
+   */
+  public <T extends S3ClientBuilder> void applyS3AccessGrantsConfigurations(T builder) {
+    if (isS3AccessGrantsEnabled) {
+      S3AccessGrantsPluginConfigurations s3AccessGrantsPluginConfigurations =
+          loadSdkPluginConfigurations(
+              S3AccessGrantsPluginConfigurations.class.getName(), allProperties);
+      s3AccessGrantsPluginConfigurations.configureS3ClientBuilder(builder);
+    }
+  }
+
+  public <T extends S3ClientBuilder> void applyUserAgentConfigurations(T builder) {
+    ClientOverrideConfiguration.Builder configBuilder =
+        null != builder.overrideConfiguration()
+            ? builder.overrideConfiguration().toBuilder()
+            : ClientOverrideConfiguration.builder();
+    builder.overrideConfiguration(
+        configBuilder
+            .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_PREFIX, S3_FILE_IO_USER_AGENT)
+            .build());
+  }
+
+  /**
+   * Dynamically load the http client builder to avoid runtime deps requirements of any optional SDK
+   * Plugins
+   */
+  private <T> T loadSdkPluginConfigurations(String impl, Map<String, String> properties) {
+    Object sdkPluginConfigurations;
+    try {
+      sdkPluginConfigurations =
+          DynMethods.builder("create")
+              .hiddenImpl(impl, Map.class)
+              .buildStaticChecked()
+              .invoke(properties);
+      return (T) sdkPluginConfigurations;
+    } catch (NoSuchMethodException e) {
+      throw new IllegalArgumentException(
+          String.format(
+              "Cannot create %s to generate and configure the client SDK Plugin builder", impl),
+          e);
     }
   }
 }

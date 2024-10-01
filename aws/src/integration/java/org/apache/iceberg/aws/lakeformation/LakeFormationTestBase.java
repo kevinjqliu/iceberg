@@ -18,9 +18,12 @@
  */
 package org.apache.iceberg.aws.lakeformation;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -37,8 +40,9 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.types.Types;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
@@ -67,13 +71,13 @@ import software.amazon.awssdk.services.lakeformation.model.DataLakeSettings;
 import software.amazon.awssdk.services.lakeformation.model.DataLocationResource;
 import software.amazon.awssdk.services.lakeformation.model.DatabaseResource;
 import software.amazon.awssdk.services.lakeformation.model.DeregisterResourceRequest;
+import software.amazon.awssdk.services.lakeformation.model.DescribeResourceRequest;
 import software.amazon.awssdk.services.lakeformation.model.EntityNotFoundException;
 import software.amazon.awssdk.services.lakeformation.model.GetDataLakeSettingsRequest;
 import software.amazon.awssdk.services.lakeformation.model.GetDataLakeSettingsResponse;
 import software.amazon.awssdk.services.lakeformation.model.GrantPermissionsRequest;
 import software.amazon.awssdk.services.lakeformation.model.Permission;
 import software.amazon.awssdk.services.lakeformation.model.PutDataLakeSettingsRequest;
-import software.amazon.awssdk.services.lakeformation.model.PutDataLakeSettingsResponse;
 import software.amazon.awssdk.services.lakeformation.model.RegisterResourceRequest;
 import software.amazon.awssdk.services.lakeformation.model.Resource;
 import software.amazon.awssdk.services.lakeformation.model.TableResource;
@@ -121,17 +125,14 @@ public class LakeFormationTestBase {
   static LakeFormationClient lakeformation;
   static GlueClient glue;
 
-  @BeforeClass
+  @BeforeAll
   public static void beforeClass() throws Exception {
-    lfRegisterPathRoleName = LF_REGISTER_PATH_ROLE_PREFIX + UUID.randomUUID().toString();
-    lfPrivilegedRoleName = LF_PRIVILEGED_ROLE_PREFIX + UUID.randomUUID().toString();
-    lfRegisterPathRoleS3PolicyName =
-        LF_REGISTER_PATH_ROLE_S3_POLICY_PREFIX + UUID.randomUUID().toString();
-    lfRegisterPathRoleLfPolicyName =
-        LF_REGISTER_PATH_ROLE_LF_POLICY_PREFIX + UUID.randomUUID().toString();
-    lfRegisterPathRoleIamPolicyName =
-        LF_REGISTER_PATH_ROLE_IAM_POLICY_PREFIX + UUID.randomUUID().toString();
-    lfPrivilegedRolePolicyName = LF_PRIVILEGED_ROLE_POLICY_PREFIX + UUID.randomUUID().toString();
+    lfRegisterPathRoleName = LF_REGISTER_PATH_ROLE_PREFIX + UUID.randomUUID();
+    lfPrivilegedRoleName = LF_PRIVILEGED_ROLE_PREFIX + UUID.randomUUID();
+    lfRegisterPathRoleS3PolicyName = LF_REGISTER_PATH_ROLE_S3_POLICY_PREFIX + UUID.randomUUID();
+    lfRegisterPathRoleLfPolicyName = LF_REGISTER_PATH_ROLE_LF_POLICY_PREFIX + UUID.randomUUID();
+    lfRegisterPathRoleIamPolicyName = LF_REGISTER_PATH_ROLE_IAM_POLICY_PREFIX + UUID.randomUUID();
+    lfPrivilegedRolePolicyName = LF_PRIVILEGED_ROLE_POLICY_PREFIX + UUID.randomUUID();
 
     iam =
         IamClient.builder()
@@ -175,7 +176,7 @@ public class LakeFormationTestBase {
         lfRegisterPathRoleIamPolicyName,
         lfRegisterPathRolePolicyDocForIam(lfRegisterPathRoleArn),
         lfRegisterPathRoleName);
-    waitForIamConsistency();
+    waitForIamConsistency(lfRegisterPathRoleName, lfRegisterPathRoleIamPolicyName);
 
     // create lfPrivilegedRole
     response =
@@ -205,7 +206,7 @@ public class LakeFormationTestBase {
         lfPrivilegedRolePolicyName,
         lfPrivilegedRolePolicyDoc(),
         lfPrivilegedRoleName);
-    waitForIamConsistency();
+    waitForIamConsistency(lfPrivilegedRoleName, lfPrivilegedRolePolicyName);
 
     // build lf and glue client with lfRegisterPathRole
     lakeformation =
@@ -215,10 +216,9 @@ public class LakeFormationTestBase {
     // put lf data lake settings
     GetDataLakeSettingsResponse getDataLakeSettingsResponse =
         lakeformation.getDataLakeSettings(GetDataLakeSettingsRequest.builder().build());
-    PutDataLakeSettingsResponse putDataLakeSettingsResponse =
-        lakeformation.putDataLakeSettings(
-            putDataLakeSettingsRequest(
-                lfRegisterPathRoleArn, getDataLakeSettingsResponse.dataLakeSettings(), true));
+    lakeformation.putDataLakeSettings(
+        putDataLakeSettingsRequest(
+            lfRegisterPathRoleArn, getDataLakeSettingsResponse.dataLakeSettings(), true));
 
     // Build test glueCatalog with lfPrivilegedRole
     glueCatalogPrivilegedRole = new GlueCatalog();
@@ -250,10 +250,9 @@ public class LakeFormationTestBase {
     // register S3 test bucket path
     deregisterResource(testBucketPath);
     registerResource(testBucketPath);
-    waitForIamConsistency();
   }
 
-  @AfterClass
+  @AfterAll
   public static void afterClass() {
     GetDataLakeSettingsResponse getDataLakeSettingsResponse =
         lakeformation.getDataLakeSettings(GetDataLakeSettingsRequest.builder().build());
@@ -357,8 +356,20 @@ public class LakeFormationTestBase {
     return LF_TEST_TABLE_PREFIX + UUID.randomUUID().toString().replace("-", "");
   }
 
-  private static void waitForIamConsistency() throws Exception {
-    Thread.sleep(IAM_PROPAGATION_DELAY); // sleep to make sure IAM up to date
+  private static void waitForIamConsistency(String roleName, String policyName) {
+    // wait to make sure IAM up to date
+    Awaitility.await()
+        .pollDelay(Duration.ofSeconds(1))
+        .atMost(Duration.ofSeconds(10))
+        .untilAsserted(
+            () ->
+                assertThat(
+                        iam.getRolePolicy(
+                            GetRolePolicyRequest.builder()
+                                .roleName(roleName)
+                                .policyName(policyName)
+                                .build()))
+                    .isNotNull());
   }
 
   private static LakeFormationClient buildLakeFormationClient(
@@ -417,7 +428,19 @@ public class LakeFormationTestBase {
               .build());
       // when a resource is registered, LF will update SLR with necessary permissions which has a
       // propagation delay
-      waitForIamConsistency();
+      Awaitility.await()
+          .pollDelay(Duration.ofSeconds(1))
+          .atMost(Duration.ofSeconds(10))
+          .ignoreExceptions()
+          .untilAsserted(
+              () ->
+                  assertThat(
+                          lakeformation
+                              .describeResource(
+                                  DescribeResourceRequest.builder().resourceArn(arn).build())
+                              .resourceInfo()
+                              .roleArn())
+                      .isEqualToIgnoringCase(lfRegisterPathRoleArn));
     } catch (AlreadyExistsException e) {
       LOG.warn("Resource {} already registered. Error: {}", arn, e.getMessage(), e);
     } catch (Exception e) {

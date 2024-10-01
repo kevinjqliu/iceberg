@@ -18,33 +18,28 @@
  */
 package org.apache.iceberg.spark.sql;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import java.util.List;
-import java.util.Map;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
-import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
-import org.apache.iceberg.spark.SparkCatalogTestBase;
+import org.apache.iceberg.spark.CatalogTestBase;
 import org.apache.iceberg.spark.source.SimpleRecord;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
-import org.assertj.core.api.Assertions;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestTemplate;
 
-public class TestDeleteFrom extends SparkCatalogTestBase {
-  public TestDeleteFrom(String catalogName, String implementation, Map<String, String> config) {
-    super(catalogName, implementation, config);
-  }
-
-  @After
+public class TestDeleteFrom extends CatalogTestBase {
+  @AfterEach
   public void removeTables() {
     sql("DROP TABLE IF EXISTS %s", tableName);
   }
 
-  @Test
+  @TestTemplate
   public void testDeleteFromUnpartitionedTable() throws NoSuchTableException {
     sql("CREATE TABLE %s (id bigint, data string) USING iceberg", tableName);
 
@@ -74,7 +69,7 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
         sql("SELECT * FROM %s ORDER BY id", tableName));
   }
 
-  @Test
+  @TestTemplate
   public void testDeleteFromTableAtSnapshot() throws NoSuchTableException {
     sql("CREATE TABLE %s (id bigint, data string) USING iceberg", tableName);
 
@@ -86,13 +81,12 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
 
     long snapshotId = validationCatalog.loadTable(tableIdent).currentSnapshot().snapshotId();
     String prefix = "snapshot_id_";
-    Assertions.assertThatThrownBy(
-            () -> sql("DELETE FROM %s.%s WHERE id < 4", tableName, prefix + snapshotId))
+    assertThatThrownBy(() -> sql("DELETE FROM %s.%s WHERE id < 4", tableName, prefix + snapshotId))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageStartingWith("Cannot delete from table at a specific snapshot");
   }
 
-  @Test
+  @TestTemplate
   public void testDeleteFromPartitionedTable() throws NoSuchTableException {
     sql(
         "CREATE TABLE %s (id bigint, data string) "
@@ -125,7 +119,7 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
         sql("SELECT * FROM %s ORDER BY id", tableName));
   }
 
-  @Test
+  @TestTemplate
   public void testDeleteFromWhereFalse() {
     sql("CREATE TABLE %s (id bigint NOT NULL, data string) USING iceberg", tableName);
     sql("INSERT INTO TABLE %s VALUES (1, 'a'), (2, 'b'), (3, 'c')", tableName);
@@ -136,17 +130,16 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
         sql("SELECT * FROM %s ORDER BY id", tableName));
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertEquals("Should have 1 snapshot", 1, Iterables.size(table.snapshots()));
+    assertThat(table.snapshots()).as("Should have 1 snapshot").hasSize(1);
 
     sql("DELETE FROM %s WHERE false", tableName);
 
     table.refresh();
 
-    Assert.assertEquals(
-        "Delete should not produce a new snapshot", 1, Iterables.size(table.snapshots()));
+    assertThat(table.snapshots()).as("Delete should not produce a new snapshot").hasSize(1);
   }
 
-  @Test
+  @TestTemplate
   public void testTruncate() {
     sql("CREATE TABLE %s (id bigint NOT NULL, data string) USING iceberg", tableName);
     sql("INSERT INTO TABLE %s VALUES (1, 'a'), (2, 'b'), (3, 'c')", tableName);
@@ -157,7 +150,7 @@ public class TestDeleteFrom extends SparkCatalogTestBase {
         sql("SELECT * FROM %s ORDER BY id", tableName));
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertEquals("Should have 1 snapshot", 1, Iterables.size(table.snapshots()));
+    assertThat(table.snapshots()).as("Should have 1 snapshot").hasSize(1);
 
     sql("TRUNCATE TABLE %s", tableName);
 

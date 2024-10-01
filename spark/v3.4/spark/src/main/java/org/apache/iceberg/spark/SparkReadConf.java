@@ -81,7 +81,12 @@ public class SparkReadConf {
 
   public boolean localityEnabled() {
     boolean defaultValue = Util.mayHaveBlockLocations(table.io(), table.location());
-    return PropertyUtil.propertyAsBoolean(readOptions, SparkReadOptions.LOCALITY, defaultValue);
+    return confParser
+        .booleanConf()
+        .option(SparkReadOptions.LOCALITY)
+        .sessionConf(SparkSQLProperties.LOCALITY)
+        .defaultValue(defaultValue)
+        .parse();
   }
 
   public Long snapshotId() {
@@ -299,14 +304,12 @@ public class SparkReadConf {
       return LOCAL;
     }
 
-    String modeName =
-        confParser
-            .stringConf()
-            .sessionConf(SparkSQLProperties.DATA_PLANNING_MODE)
-            .tableProperty(TableProperties.DATA_PLANNING_MODE)
-            .defaultValue(TableProperties.PLANNING_MODE_DEFAULT)
-            .parse();
-    return PlanningMode.fromName(modeName);
+    return confParser
+        .enumConf(PlanningMode::fromName)
+        .sessionConf(SparkSQLProperties.DATA_PLANNING_MODE)
+        .tableProperty(TableProperties.DATA_PLANNING_MODE)
+        .defaultValue(TableProperties.PLANNING_MODE_DEFAULT)
+        .parse();
   }
 
   public PlanningMode deletePlanningMode() {
@@ -327,5 +330,25 @@ public class SparkReadConf {
   private long driverMaxResultSize() {
     SparkConf sparkConf = spark.sparkContext().conf();
     return sparkConf.getSizeAsBytes(DRIVER_MAX_RESULT_SIZE, DRIVER_MAX_RESULT_SIZE_DEFAULT);
+  }
+
+  public boolean executorCacheLocalityEnabled() {
+    return executorCacheEnabled() && executorCacheLocalityEnabledInternal();
+  }
+
+  private boolean executorCacheEnabled() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.EXECUTOR_CACHE_ENABLED)
+        .defaultValue(SparkSQLProperties.EXECUTOR_CACHE_ENABLED_DEFAULT)
+        .parse();
+  }
+
+  private boolean executorCacheLocalityEnabledInternal() {
+    return confParser
+        .booleanConf()
+        .sessionConf(SparkSQLProperties.EXECUTOR_CACHE_LOCALITY_ENABLED)
+        .defaultValue(SparkSQLProperties.EXECUTOR_CACHE_LOCALITY_ENABLED_DEFAULT)
+        .parse();
   }
 }

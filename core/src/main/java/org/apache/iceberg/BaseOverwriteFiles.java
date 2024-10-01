@@ -48,6 +48,14 @@ public class BaseOverwriteFiles extends MergingSnapshotProducer<OverwriteFiles>
 
   @Override
   protected String operation() {
+    if (deletesDataFiles() && !addsDataFiles()) {
+      return DataOperations.DELETE;
+    }
+
+    if (addsDataFiles() && !deletesDataFiles()) {
+      return DataOperations.APPEND;
+    }
+
     return DataOperations.OVERWRITE;
   }
 
@@ -149,7 +157,7 @@ public class BaseOverwriteFiles extends MergingSnapshotProducer<OverwriteFiles>
         validateDeletedDataFiles(base, startingSnapshotId, filter, parent);
       }
 
-      if (deletedDataFiles.size() > 0) {
+      if (!deletedDataFiles.isEmpty()) {
         validateNoNewDeletesForDataFiles(
             base, startingSnapshotId, conflictDetectionFilter, deletedDataFiles, parent);
       }

@@ -124,6 +124,7 @@ public class CatalogProperties {
       "client.pool.cache.eviction-interval-ms";
   public static final long CLIENT_POOL_CACHE_EVICTION_INTERVAL_MS_DEFAULT =
       TimeUnit.MINUTES.toMillis(5);
+
   /**
    * A comma separated list of elements used, in addition to the {@link #URI}, to compose the key of
    * the client pool cache.
@@ -156,4 +157,7 @@ public class CatalogProperties {
 
   public static final String AUTH_SESSION_TIMEOUT_MS = "auth.session-timeout-ms";
   public static final long AUTH_SESSION_TIMEOUT_MS_DEFAULT = TimeUnit.HOURS.toMillis(1);
+
+  public static final String ENCRYPTION_KMS_TYPE = "encryption.kms-type";
+  public static final String ENCRYPTION_KMS_IMPL = "encryption.kms-impl";
 }

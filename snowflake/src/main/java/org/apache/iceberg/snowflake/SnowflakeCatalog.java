@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.snowflake;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +44,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SnowflakeCatalog extends BaseMetastoreCatalog
-    implements Closeable, SupportsNamespaces, Configurable<Object> {
+    implements SupportsNamespaces, Configurable<Object> {
   private static final String DEFAULT_CATALOG_NAME = "snowflake_catalog";
   private static final String DEFAULT_FILE_IO_IMPL = "org.apache.iceberg.io.ResolvingFileIO";
   // Specifies the name of a Snowflake's partner application to connect through JDBC.
@@ -56,6 +55,7 @@ public class SnowflakeCatalog extends BaseMetastoreCatalog
   private static final String APP_IDENTIFIER = "iceberg-snowflake-catalog";
   // Specifies the max length of unique id for each catalog initialized session.
   private static final int UNIQUE_ID_LENGTH = 20;
+
   // Injectable factory for testing purposes.
   static class FileIOFactory {
     public FileIO newFileIO(String impl, Map<String, String> properties, Object hadoopConf) {
@@ -157,6 +157,7 @@ public class SnowflakeCatalog extends BaseMetastoreCatalog
     this.catalogProperties = properties;
     this.closeableGroup = new CloseableGroup();
     closeableGroup.addCloseable(snowflakeClient);
+    closeableGroup.addCloseable(metricsReporter());
     closeableGroup.setSuppressCloseFailure(true);
   }
 
@@ -176,7 +177,7 @@ public class SnowflakeCatalog extends BaseMetastoreCatalog
   @Override
   public List<Namespace> listNamespaces(Namespace namespace) {
     SnowflakeIdentifier scope = NamespaceHelpers.toSnowflakeIdentifier(namespace);
-    List<SnowflakeIdentifier> results = null;
+    List<SnowflakeIdentifier> results;
     switch (scope.type()) {
       case ROOT:
         results = snowflakeClient.listDatabases();

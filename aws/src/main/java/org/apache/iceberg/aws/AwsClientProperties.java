@@ -67,7 +67,7 @@ public class AwsClientProperties implements Serializable {
   public static final String CLIENT_REGION = "client.region";
 
   private String clientRegion;
-  private String clientCredentialsProvider;
+  private final String clientCredentialsProvider;
   private final Map<String, String> clientCredentialsProviderProperties;
 
   public AwsClientProperties() {
@@ -150,7 +150,8 @@ public class AwsClientProperties implements Serializable {
       return credentialsProvider(this.clientCredentialsProvider);
     }
 
-    return DefaultCredentialsProvider.create();
+    // Create a new credential provider for each client
+    return DefaultCredentialsProvider.builder().build();
   }
 
   private AwsCredentialsProvider credentialsProvider(String credentialsProviderClass) {

@@ -63,7 +63,10 @@ import org.apache.iceberg.data.orc.GenericOrcWriter;
 import org.apache.iceberg.data.orc.GenericOrcWriters;
 import org.apache.iceberg.deletes.EqualityDeleteWriter;
 import org.apache.iceberg.deletes.PositionDeleteWriter;
+import org.apache.iceberg.encryption.EncryptedOutputFile;
 import org.apache.iceberg.encryption.EncryptionKeyMetadata;
+import org.apache.iceberg.encryption.NativeEncryptionInputFile;
+import org.apache.iceberg.encryption.NativeEncryptionOutputFile;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.hadoop.HadoopInputFile;
@@ -92,7 +95,9 @@ import org.apache.orc.storage.ql.exec.vector.VectorizedRowBatch;
 @SuppressWarnings("checkstyle:AbbreviationAsWordInName")
 public class ORC {
 
-  /** @deprecated use {@link TableProperties#ORC_WRITE_BATCH_SIZE} instead */
+  /**
+   * @deprecated use {@link TableProperties#ORC_WRITE_BATCH_SIZE} instead
+   */
   @Deprecated private static final String VECTOR_ROW_BATCH_SIZE = "iceberg.orc.vectorbatch.size";
 
   private ORC() {}
@@ -101,12 +106,18 @@ public class ORC {
     return new WriteBuilder(file);
   }
 
+  public static WriteBuilder write(EncryptedOutputFile file) {
+    Preconditions.checkState(
+        !(file instanceof NativeEncryptionOutputFile), "Native ORC encryption is not supported");
+    return new WriteBuilder(file.encryptingOutputFile());
+  }
+
   public static class WriteBuilder {
     private final OutputFile file;
     private final Configuration conf;
     private Schema schema = null;
     private BiFunction<Schema, TypeDescription, OrcRowWriter<?>> createWriterFunc;
-    private Map<String, byte[]> metadata = Maps.newHashMap();
+    private final Map<String, byte[]> metadata = Maps.newHashMap();
     private MetricsConfig metricsConfig;
     private Function<Map<String, String>, Context> createContextFunc = Context::dataContext;
     private final Map<String, String> config = Maps.newLinkedHashMap();
@@ -382,6 +393,12 @@ public class ORC {
     return new DataWriteBuilder(file);
   }
 
+  public static DataWriteBuilder writeData(EncryptedOutputFile file) {
+    Preconditions.checkState(
+        !(file instanceof NativeEncryptionOutputFile), "Native ORC encryption is not supported");
+    return new DataWriteBuilder(file.encryptingOutputFile());
+  }
+
   public static class DataWriteBuilder {
     private final WriteBuilder appenderBuilder;
     private final String location;
@@ -477,6 +494,12 @@ public class ORC {
 
   public static DeleteWriteBuilder writeDeletes(OutputFile file) {
     return new DeleteWriteBuilder(file);
+  }
+
+  public static DeleteWriteBuilder writeDeletes(EncryptedOutputFile file) {
+    Preconditions.checkState(
+        !(file instanceof NativeEncryptionOutputFile), "Native ORC encryption is not supported");
+    return new DeleteWriteBuilder(file.encryptingOutputFile());
   }
 
   public static class DeleteWriteBuilder {
@@ -657,6 +680,9 @@ public class ORC {
   }
 
   public static ReadBuilder read(InputFile file) {
+    Preconditions.checkState(
+        !(file instanceof NativeEncryptionInputFile), "Native ORC encryption is not supported");
+
     return new ReadBuilder(file);
   }
 

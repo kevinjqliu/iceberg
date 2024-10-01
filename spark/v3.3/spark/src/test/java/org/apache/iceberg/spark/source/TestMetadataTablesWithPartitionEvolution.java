@@ -29,19 +29,19 @@ import static org.apache.iceberg.MetadataTableType.PARTITIONS;
 import static org.apache.iceberg.TableProperties.DEFAULT_FILE_FORMAT;
 import static org.apache.iceberg.TableProperties.FORMAT_VERSION;
 import static org.apache.iceberg.TableProperties.MANIFEST_MERGE_ENABLED;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.MetadataTableType;
 import org.apache.iceberg.PartitionSpec;
-import org.apache.iceberg.PartitionSpecParser;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
+import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.expressions.Expressions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
@@ -627,9 +627,11 @@ public class TestMetadataTablesWithPartitionEvolution extends SparkCatalogTestBa
     Table table = validationCatalog.loadTable(tableIdent);
 
     PartitionSpec unknownSpec =
-        PartitionSpecParser.fromJson(
-            table.schema(),
-            "{ \"spec-id\": 1, \"fields\": [ { \"name\": \"id_zero\", \"transform\": \"zero\", \"source-id\": 1 } ] }");
+        TestHelpers.newExpectedSpecBuilder()
+            .withSchema(table.schema())
+            .withSpecId(1)
+            .addField("zero", 1, "id_zero")
+            .build();
 
     // replace the table spec to include an unknown transform
     TableOperations ops = ((HasTableOperations) table).operations();
@@ -639,11 +641,10 @@ public class TestMetadataTablesWithPartitionEvolution extends SparkCatalogTestBa
     sql("REFRESH TABLE %s", tableName);
 
     for (MetadataTableType tableType : Arrays.asList(FILES, ALL_DATA_FILES, ENTRIES, ALL_ENTRIES)) {
-      AssertHelpers.assertThrows(
-          "Should complain about the partition type",
-          ValidationException.class,
-          "Cannot build table partition type, unknown transforms",
-          () -> loadMetadataTable(tableType));
+      assertThatThrownBy(() -> loadMetadataTable(tableType))
+          .as("Should complain about the partition type")
+          .isInstanceOf(ValidationException.class)
+          .hasMessageContaining("Cannot build table partition type, unknown transforms");
     }
   }
 

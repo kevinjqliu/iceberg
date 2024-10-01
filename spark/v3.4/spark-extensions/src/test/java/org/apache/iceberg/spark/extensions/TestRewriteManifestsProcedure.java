@@ -19,6 +19,7 @@
 package org.apache.iceberg.spark.extensions;
 
 import static org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.sql.Date;
 import java.sql.Timestamp;
@@ -31,7 +32,6 @@ import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.catalyst.analysis.NoSuchProcedureException;
 import org.apache.spark.sql.catalyst.analysis.NoSuchTableException;
-import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Test;
@@ -276,31 +276,29 @@ public class TestRewriteManifestsProcedure extends SparkExtensionsTestBase {
 
   @Test
   public void testInvalidRewriteManifestsCases() {
-    Assertions.assertThatThrownBy(
+    assertThatThrownBy(
             () -> sql("CALL %s.system.rewrite_manifests('n', table => 't')", catalogName))
         .isInstanceOf(AnalysisException.class)
         .hasMessage("Named and positional arguments cannot be mixed");
 
-    Assertions.assertThatThrownBy(
-            () -> sql("CALL %s.custom.rewrite_manifests('n', 't')", catalogName))
+    assertThatThrownBy(() -> sql("CALL %s.custom.rewrite_manifests('n', 't')", catalogName))
         .isInstanceOf(NoSuchProcedureException.class)
         .hasMessage("Procedure custom.rewrite_manifests not found");
 
-    Assertions.assertThatThrownBy(() -> sql("CALL %s.system.rewrite_manifests()", catalogName))
+    assertThatThrownBy(() -> sql("CALL %s.system.rewrite_manifests()", catalogName))
         .isInstanceOf(AnalysisException.class)
         .hasMessage("Missing required parameters: [table]");
 
-    Assertions.assertThatThrownBy(
-            () -> sql("CALL %s.system.rewrite_manifests('n', 2.2)", catalogName))
+    assertThatThrownBy(() -> sql("CALL %s.system.rewrite_manifests('n', 2.2)", catalogName))
         .isInstanceOf(AnalysisException.class)
         .hasMessageStartingWith("Wrong arg type for use_caching");
 
-    Assertions.assertThatThrownBy(
+    assertThatThrownBy(
             () -> sql("CALL %s.system.rewrite_manifests(table => 't', tAbLe => 't')", catalogName))
         .isInstanceOf(AnalysisException.class)
         .hasMessage("Could not build name to arg map: Duplicate procedure argument: table");
 
-    Assertions.assertThatThrownBy(() -> sql("CALL %s.system.rewrite_manifests('')", catalogName))
+    assertThatThrownBy(() -> sql("CALL %s.system.rewrite_manifests('')", catalogName))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Cannot handle an empty identifier for argument table");
   }
@@ -330,5 +328,40 @@ public class TestRewriteManifestsProcedure extends SparkExtensionsTestBase {
         ImmutableList.of(
             row(1, Timestamp.valueOf("2022-01-01 10:00:00"), Date.valueOf("2022-01-01"))),
         sql("SELECT * FROM %s WHERE ts < current_timestamp()", tableName));
+  }
+
+  @Test
+  public void testWriteManifestWithSpecId() {
+    sql(
+        "CREATE TABLE %s (id int, dt string, hr string) USING iceberg PARTITIONED BY (dt)",
+        tableName);
+    sql("ALTER TABLE %s SET TBLPROPERTIES ('commit.manifest-merge.enabled' = 'false')", tableName);
+
+    sql("INSERT INTO %s VALUES (1, '2024-01-01', '00')", tableName);
+    sql("INSERT INTO %s VALUES (2, '2024-01-01', '00')", tableName);
+    assertEquals(
+        "Should have 2 manifests and their partition spec id should be 0",
+        ImmutableList.of(row(0), row(0)),
+        sql("SELECT partition_spec_id FROM %s.manifests order by 1 asc", tableName));
+
+    sql("ALTER TABLE %s ADD PARTITION FIELD hr", tableName);
+    sql("INSERT INTO %s VALUES (3, '2024-01-01', '00')", tableName);
+    assertEquals(
+        "Should have 3 manifests and their partition spec id should be 0 and 1",
+        ImmutableList.of(row(0), row(0), row(1)),
+        sql("SELECT partition_spec_id FROM %s.manifests order by 1 asc", tableName));
+
+    List<Object[]> output = sql("CALL %s.system.rewrite_manifests('%s')", catalogName, tableIdent);
+    assertEquals("Nothing should be rewritten", ImmutableList.of(row(0, 0)), output);
+
+    output =
+        sql(
+            "CALL %s.system.rewrite_manifests(table => '%s', spec_id => 0)",
+            catalogName, tableIdent);
+    assertEquals("There should be 2 manifests rewriten", ImmutableList.of(row(2, 1)), output);
+    assertEquals(
+        "Should have 2 manifests and their partition spec id should be 0 and 1",
+        ImmutableList.of(row(0), row(1)),
+        sql("SELECT partition_spec_id FROM %s.manifests order by 1 asc", tableName));
   }
 }

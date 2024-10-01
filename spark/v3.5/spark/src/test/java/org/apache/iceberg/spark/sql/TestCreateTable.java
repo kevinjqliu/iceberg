@@ -18,8 +18,13 @@
  */
 package org.apache.iceberg.spark.sql;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assumptions.assumeThat;
+
 import java.io.File;
-import java.util.Map;
+import java.nio.file.Files;
+import java.util.UUID;
 import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
@@ -27,87 +32,113 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.hadoop.HadoopCatalog;
-import org.apache.iceberg.spark.SparkCatalogTestBase;
+import org.apache.iceberg.spark.CatalogTestBase;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.types.Types.NestedField;
 import org.apache.iceberg.types.Types.StructType;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.assertj.core.api.Assertions;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Assume;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.TestTemplate;
 
-public class TestCreateTable extends SparkCatalogTestBase {
-  public TestCreateTable(String catalogName, String implementation, Map<String, String> config) {
-    super(catalogName, implementation, config);
-  }
+public class TestCreateTable extends CatalogTestBase {
 
-  @After
+  @AfterEach
   public void dropTestTable() {
     sql("DROP TABLE IF EXISTS %s", tableName);
   }
 
-  @Test
+  @TestTemplate
   public void testTransformIgnoreCase() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
     sql(
         "CREATE TABLE IF NOT EXISTS %s (id BIGINT NOT NULL, ts timestamp) "
             + "USING iceberg partitioned by (HOURS(ts))",
         tableName);
-    Assert.assertTrue("Table should already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent)).as("Table should already exist").isTrue();
     sql(
         "CREATE TABLE IF NOT EXISTS %s (id BIGINT NOT NULL, ts timestamp) "
             + "USING iceberg partitioned by (hours(ts))",
         tableName);
-    Assert.assertTrue("Table should already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent)).as("Table should already exist").isTrue();
   }
 
-  @Test
+  @TestTemplate
   public void testTransformSingularForm() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
     sql(
         "CREATE TABLE IF NOT EXISTS %s (id BIGINT NOT NULL, ts timestamp) "
             + "USING iceberg partitioned by (hour(ts))",
         tableName);
-    Assert.assertTrue("Table should exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent)).as("Table should exist").isTrue();
   }
 
-  @Test
+  @TestTemplate
   public void testTransformPluralForm() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
     sql(
         "CREATE TABLE IF NOT EXISTS %s (id BIGINT NOT NULL, ts timestamp) "
             + "USING iceberg partitioned by (hours(ts))",
         tableName);
-    Assert.assertTrue("Table should exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent)).as("Table should exist").isTrue();
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTable() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql("CREATE TABLE %s (id BIGINT NOT NULL, data STRING) USING iceberg", tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get()),
             NestedField.optional(2, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertNull(
-        "Should not have the default format set",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have the default format set")
+        .isNull();
   }
 
-  @Test
+  @TestTemplate
+  public void testCreateTablePartitionedByUUID() {
+    assertThat(validationCatalog.tableExists(tableIdent)).isFalse();
+    Schema schema = new Schema(1, Types.NestedField.optional(1, "uuid", Types.UUIDType.get()));
+    PartitionSpec spec = PartitionSpec.builderFor(schema).bucket("uuid", 16).build();
+    validationCatalog.createTable(tableIdent, schema, spec);
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    assertThat(table).isNotNull();
+
+    StructType expectedSchema =
+        StructType.of(Types.NestedField.optional(1, "uuid", Types.UUIDType.get()));
+    assertThat(table.schema().asStruct()).isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).hasSize(1);
+
+    String uuid = UUID.randomUUID().toString();
+
+    sql("INSERT INTO %s VALUES('%s')", tableName, uuid);
+
+    assertThat(sql("SELECT uuid FROM %s", tableName)).hasSize(1).element(0).isEqualTo(row(uuid));
+  }
+
+  @TestTemplate
   public void testCreateTableInRootNamespace() {
-    Assume.assumeTrue(
-        "Hadoop has no default namespace configured", "testhadoop".equals(catalogName));
+    assumeThat(catalogName)
+        .as("Hadoop has no default namespace configured")
+        .isEqualTo("testhadoop");
 
     try {
       sql("CREATE TABLE %s.table (id bigint) USING iceberg", catalogName);
@@ -116,32 +147,34 @@ public class TestCreateTable extends SparkCatalogTestBase {
     }
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableUsingParquet() {
-    Assume.assumeTrue(
-        "Not working with session catalog because Spark will not use v2 for a Parquet table",
-        !"spark_catalog".equals(catalogName));
+    assumeThat(catalogName)
+        .as("Not working with session catalog because Spark will not use v2 for a Parquet table")
+        .isNotEqualTo("spark_catalog");
 
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql("CREATE TABLE %s (id BIGINT NOT NULL, data STRING) USING parquet", tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get()),
             NestedField.optional(2, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertEquals(
-        "Should not have default format parquet",
-        "parquet",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have default format parquet")
+        .isEqualTo("parquet");
 
-    Assertions.assertThatThrownBy(
+    assertThatThrownBy(
             () ->
                 sql(
                     "CREATE TABLE %s.default.fail (id BIGINT NOT NULL, data STRING) USING crocodile",
@@ -150,9 +183,11 @@ public class TestCreateTable extends SparkCatalogTestBase {
         .hasMessage("Unsupported format in USING: crocodile");
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTablePartitionedBy() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -162,7 +197,7 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
@@ -170,8 +205,9 @@ public class TestCreateTable extends SparkCatalogTestBase {
             NestedField.optional(2, "created_at", Types.TimestampType.withZone()),
             NestedField.optional(3, "category", Types.StringType.get()),
             NestedField.optional(4, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
 
     PartitionSpec expectedSpec =
         PartitionSpec.builderFor(new Schema(expectedSchema.fields()))
@@ -179,16 +215,18 @@ public class TestCreateTable extends SparkCatalogTestBase {
             .bucket("id", 8)
             .day("created_at")
             .build();
-    Assert.assertEquals("Should be partitioned correctly", expectedSpec, table.spec());
+    assertThat(table.spec()).as("Should be partitioned correctly").isEqualTo(expectedSpec);
 
-    Assert.assertNull(
-        "Should not have the default format set",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have the default format set")
+        .isNull();
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableColumnComments() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -197,23 +235,26 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get(), "Unique identifier"),
             NestedField.optional(2, "data", Types.StringType.get(), "Data value"));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertNull(
-        "Should not have the default format set",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have the default format set")
+        .isNull();
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableComment() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -223,36 +264,38 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get()),
             NestedField.optional(2, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertNull(
-        "Should not have the default format set",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
-    Assert.assertEquals(
-        "Should have the table comment set in properties",
-        "Table doc",
-        table.properties().get(TableCatalog.PROP_COMMENT));
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have the default format set")
+        .isNull();
+    assertThat(table.properties().get(TableCatalog.PROP_COMMENT))
+        .as("Should have the table comment set in properties")
+        .isEqualTo("Table doc");
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableLocation() throws Exception {
-    Assume.assumeTrue(
-        "Cannot set custom locations for Hadoop catalog tables",
-        !(validationCatalog instanceof HadoopCatalog));
+    assumeThat(validationCatalog)
+        .as("Cannot set custom locations for Hadoop catalog tables")
+        .isNotInstanceOf(HadoopCatalog.class);
 
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
-    File tableLocation = temp.newFolder();
-    Assert.assertTrue(tableLocation.delete());
+    File tableLocation = Files.createTempDirectory(temp, "junit").toFile();
+    assertThat(tableLocation.delete()).isTrue();
 
-    String location = "file:" + tableLocation.toString();
+    String location = "file:" + tableLocation;
 
     sql(
         "CREATE TABLE %s "
@@ -262,24 +305,27 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName, location);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get()),
             NestedField.optional(2, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertNull(
-        "Should not have the default format set",
-        table.properties().get(TableProperties.DEFAULT_FILE_FORMAT));
-    Assert.assertEquals("Should have a custom table location", location, table.location());
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties().get(TableProperties.DEFAULT_FILE_FORMAT))
+        .as("Should not have the default format set")
+        .isNull();
+    assertThat(table.location()).as("Should have a custom table location").isEqualTo(location);
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableProperties() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -289,22 +335,24 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertNotNull("Should load the new table", table);
+    assertThat(table).as("Should load the new table").isNotNull();
 
     StructType expectedSchema =
         StructType.of(
             NestedField.required(1, "id", Types.LongType.get()),
             NestedField.optional(2, "data", Types.StringType.get()));
-    Assert.assertEquals(
-        "Should have the expected schema", expectedSchema, table.schema().asStruct());
-    Assert.assertEquals("Should not be partitioned", 0, table.spec().fields().size());
-    Assert.assertEquals("Should have property p1", "2", table.properties().get("p1"));
-    Assert.assertEquals("Should have property p2", "x", table.properties().get("p2"));
+    assertThat(table.schema().asStruct())
+        .as("Should have the expected schema")
+        .isEqualTo(expectedSchema);
+    assertThat(table.spec().fields()).as("Should not be partitioned").hasSize(0);
+    assertThat(table.properties()).containsEntry("p1", "2").containsEntry("p2", "x");
   }
 
-  @Test
+  @TestTemplate
   public void testCreateTableWithFormatV2ThroughTableProperty() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -314,15 +362,16 @@ public class TestCreateTable extends SparkCatalogTestBase {
         tableName);
 
     Table table = validationCatalog.loadTable(tableIdent);
-    Assert.assertEquals(
-        "should create table using format v2",
-        2,
-        ((BaseTable) table).operations().current().formatVersion());
+    assertThat(((BaseTable) table).operations().current().formatVersion())
+        .as("should create table using format v2")
+        .isEqualTo(2);
   }
 
-  @Test
+  @TestTemplate
   public void testUpgradeTableWithFormatV2ThroughTableProperty() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -333,15 +382,21 @@ public class TestCreateTable extends SparkCatalogTestBase {
 
     Table table = validationCatalog.loadTable(tableIdent);
     TableOperations ops = ((BaseTable) table).operations();
-    Assert.assertEquals("should create table using format v1", 1, ops.refresh().formatVersion());
+    assertThat(ops.refresh().formatVersion())
+        .as("should create table using format v1")
+        .isEqualTo(1);
 
     sql("ALTER TABLE %s SET TBLPROPERTIES ('format-version'='2')", tableName);
-    Assert.assertEquals("should update table to use format v2", 2, ops.refresh().formatVersion());
+    assertThat(ops.refresh().formatVersion())
+        .as("should update table to use format v2")
+        .isEqualTo(2);
   }
 
-  @Test
+  @TestTemplate
   public void testDowngradeTableToFormatV1ThroughTablePropertyFails() {
-    Assert.assertFalse("Table should not already exist", validationCatalog.tableExists(tableIdent));
+    assertThat(validationCatalog.tableExists(tableIdent))
+        .as("Table should not already exist")
+        .isFalse();
 
     sql(
         "CREATE TABLE %s "
@@ -352,9 +407,11 @@ public class TestCreateTable extends SparkCatalogTestBase {
 
     Table table = validationCatalog.loadTable(tableIdent);
     TableOperations ops = ((BaseTable) table).operations();
-    Assert.assertEquals("should create table using format v2", 2, ops.refresh().formatVersion());
+    assertThat(ops.refresh().formatVersion())
+        .as("should create table using format v2")
+        .isEqualTo(2);
 
-    Assertions.assertThatThrownBy(
+    assertThatThrownBy(
             () -> sql("ALTER TABLE %s SET TBLPROPERTIES ('format-version'='1')", tableName))
         .cause()
         .isInstanceOf(IllegalArgumentException.class)

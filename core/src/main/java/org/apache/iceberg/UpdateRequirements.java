@@ -23,6 +23,7 @@ import java.util.Set;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
+import org.apache.iceberg.view.ViewMetadata;
 
 public class UpdateRequirements {
 
@@ -52,6 +53,16 @@ public class UpdateRequirements {
     Preconditions.checkArgument(null != metadataUpdates, "Invalid metadata updates: null");
     Builder builder = new Builder(base, false);
     builder.require(new UpdateRequirement.AssertTableUUID(base.uuid()));
+    metadataUpdates.forEach(builder::update);
+    return builder.build();
+  }
+
+  public static List<UpdateRequirement> forReplaceView(
+      ViewMetadata base, List<MetadataUpdate> metadataUpdates) {
+    Preconditions.checkArgument(null != base, "Invalid view metadata: null");
+    Preconditions.checkArgument(null != metadataUpdates, "Invalid metadata updates: null");
+    Builder builder = new Builder(null, false);
+    builder.require(new UpdateRequirement.AssertViewUUID(base.uuid()));
     metadataUpdates.forEach(builder::update);
     return builder.build();
   }
@@ -113,7 +124,7 @@ public class UpdateRequirements {
       }
     }
 
-    private void update(MetadataUpdate.AddSchema update) {
+    private void update(MetadataUpdate.AddSchema unused) {
       if (!addedSchema) {
         if (base != null) {
           require(new UpdateRequirement.AssertLastAssignedFieldId(base.lastColumnId()));
@@ -122,7 +133,7 @@ public class UpdateRequirements {
       }
     }
 
-    private void update(MetadataUpdate.SetCurrentSchema update) {
+    private void update(MetadataUpdate.SetCurrentSchema unused) {
       if (!setSchemaId) {
         if (base != null && !isReplace) {
           // require that the current schema has not changed
@@ -132,7 +143,7 @@ public class UpdateRequirements {
       }
     }
 
-    private void update(MetadataUpdate.AddPartitionSpec update) {
+    private void update(MetadataUpdate.AddPartitionSpec unused) {
       if (!addedSpec) {
         if (base != null) {
           require(
@@ -142,7 +153,7 @@ public class UpdateRequirements {
       }
     }
 
-    private void update(MetadataUpdate.SetDefaultPartitionSpec update) {
+    private void update(MetadataUpdate.SetDefaultPartitionSpec unused) {
       if (!setSpecId) {
         if (base != null && !isReplace) {
           // require that the default spec has not changed
@@ -152,7 +163,7 @@ public class UpdateRequirements {
       }
     }
 
-    private void update(MetadataUpdate.SetDefaultSortOrder update) {
+    private void update(MetadataUpdate.SetDefaultSortOrder unused) {
       if (!setOrderId) {
         if (base != null && !isReplace) {
           // require that the default write order has not changed

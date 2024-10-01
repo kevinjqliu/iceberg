@@ -138,7 +138,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
   @Rule public TemporaryFolder temp = new TemporaryFolder();
 
-  private String baseTableName = "baseTable";
+  private final String baseTableName = "baseTable";
   private File tableDir;
   private String tableLocation;
   private final String type;
@@ -183,6 +183,11 @@ public class TestCreateActions extends SparkCatalogTestBase {
   public void after() throws IOException {
     // Drop the hive table.
     spark.sql(String.format("DROP TABLE IF EXISTS %s", baseTableName));
+    spark.sessionState().catalogManager().reset();
+    spark.conf().unset("spark.sql.catalog.spark_catalog.type");
+    spark.conf().unset("spark.sql.catalog.spark_catalog.default-namespace");
+    spark.conf().unset("spark.sql.catalog.spark_catalog.parquet-enabled");
+    spark.conf().unset("spark.sql.catalog.spark_catalog.cache-enabled");
   }
 
   @Test
@@ -269,7 +274,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should succeed without any exceptions
     List<Object[]> results1 = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results1.size() > 0);
+    Assert.assertFalse(results1.isEmpty());
     assertEquals("Output must match", results1, expected1);
 
     String newCol2 = "newCol2";
@@ -279,7 +284,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should succeed without any exceptions
     List<Object[]> results2 = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results2.size() > 0);
+    Assert.assertFalse(results2.isEmpty());
     assertEquals("Output must match", results2, expected2);
   }
 
@@ -313,7 +318,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should succeed
     List<Object[]> results = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", results, expected);
   }
 
@@ -351,7 +356,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should succeed without any exceptions
     List<Object[]> results1 = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results1.size() > 0);
+    Assert.assertFalse(results1.isEmpty());
     assertEquals("Output must match", expected1, results1);
 
     sql("ALTER TABLE %s DROP COLUMN %s", dest, colName2);
@@ -360,7 +365,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should succeed without any exceptions
     List<Object[]> results2 = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results2.size() > 0);
+    Assert.assertFalse(results2.isEmpty());
     assertEquals("Output must match", expected2, results2);
   }
 
@@ -392,7 +397,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // reads should return same output as that of non-iceberg table
     List<Object[]> results = sql("select * from %s order by id", dest);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 
@@ -728,6 +733,8 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
   @Test
   public void testTwoLevelList() throws IOException {
+    Assume.assumeTrue("Cannot migrate to a hadoop based catalog", !type.equals("hadoop"));
+
     spark.conf().set("spark.sql.parquet.writeLegacyFormat", true);
 
     String tableName = sourceName("testTwoLevelList");
@@ -806,11 +813,13 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // check migrated table is returning expected result
     List<Object[]> results = sql("SELECT * FROM %s", tableName);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 
   private void threeLevelList(boolean useLegacyMode) throws Exception {
+    Assume.assumeTrue("Cannot migrate to a hadoop based catalog", !type.equals("hadoop"));
+
     spark.conf().set("spark.sql.parquet.writeLegacyFormat", useLegacyMode);
 
     String tableName = sourceName(String.format("threeLevelList_%s", useLegacyMode));
@@ -828,11 +837,13 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // check migrated table is returning expected result
     List<Object[]> results = sql("SELECT * FROM %s", tableName);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 
   private void threeLevelListWithNestedStruct(boolean useLegacyMode) throws Exception {
+    Assume.assumeTrue("Cannot migrate to a hadoop based catalog", !type.equals("hadoop"));
+
     spark.conf().set("spark.sql.parquet.writeLegacyFormat", useLegacyMode);
 
     String tableName =
@@ -853,11 +864,13 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // check migrated table is returning expected result
     List<Object[]> results = sql("SELECT * FROM %s", tableName);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 
   private void threeLevelLists(boolean useLegacyMode) throws Exception {
+    Assume.assumeTrue("Cannot migrate to a hadoop based catalog", !type.equals("hadoop"));
+
     spark.conf().set("spark.sql.parquet.writeLegacyFormat", useLegacyMode);
 
     String tableName = sourceName(String.format("threeLevelLists_%s", useLegacyMode));
@@ -880,11 +893,13 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // check migrated table is returning expected result
     List<Object[]> results = sql("SELECT * FROM %s", tableName);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 
   private void structOfThreeLevelLists(boolean useLegacyMode) throws Exception {
+    Assume.assumeTrue("Cannot migrate to a hadoop based catalog", !type.equals("hadoop"));
+
     spark.conf().set("spark.sql.parquet.writeLegacyFormat", useLegacyMode);
 
     String tableName = sourceName(String.format("structOfThreeLevelLists_%s", useLegacyMode));
@@ -904,7 +919,7 @@ public class TestCreateActions extends SparkCatalogTestBase {
 
     // check migrated table is returning expected result
     List<Object[]> results = sql("SELECT * FROM %s", tableName);
-    Assert.assertTrue(results.size() > 0);
+    Assert.assertFalse(results.isEmpty());
     assertEquals("Output must match", expected, results);
   }
 

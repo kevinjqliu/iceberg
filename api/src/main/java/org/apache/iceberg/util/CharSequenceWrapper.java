@@ -29,6 +29,11 @@ public class CharSequenceWrapper implements CharSequence, Serializable {
   }
 
   private CharSequence wrapped;
+  // lazily computed & cached hashCode
+  private transient int hashCode = 0;
+  // tracks if the hash has been calculated as actually being zero to avoid re-calculating the hash.
+  // this follows the hashCode() implementation from java.lang.String
+  private transient boolean hashIsZero = false;
 
   private CharSequenceWrapper(CharSequence wrapped) {
     this.wrapped = wrapped;
@@ -36,6 +41,8 @@ public class CharSequenceWrapper implements CharSequence, Serializable {
 
   public CharSequenceWrapper set(CharSequence newWrapped) {
     this.wrapped = newWrapped;
+    this.hashCode = 0;
+    this.hashIsZero = false;
     return this;
   }
 
@@ -44,6 +51,7 @@ public class CharSequenceWrapper implements CharSequence, Serializable {
   }
 
   @Override
+  @SuppressWarnings("UndefinedEquals")
   public boolean equals(Object other) {
     if (this == other) {
       return true;
@@ -52,12 +60,37 @@ public class CharSequenceWrapper implements CharSequence, Serializable {
     }
 
     CharSequenceWrapper that = (CharSequenceWrapper) other;
+
+    if (wrapped instanceof String && that.wrapped instanceof String) {
+      return wrapped.equals(that.wrapped);
+    }
+
+    if (null == wrapped && null == that.wrapped) {
+      return true;
+    }
+
+    if (length() != that.length()) {
+      return false;
+    }
+
     return Comparators.charSequences().compare(wrapped, that.wrapped) == 0;
   }
 
   @Override
   public int hashCode() {
-    return JavaHashes.hashCode(wrapped);
+    int hash = hashCode;
+
+    // don't recalculate if the hash is actually 0
+    if (hash == 0 && !hashIsZero) {
+      hash = JavaHashes.hashCode(wrapped);
+      if (hash == 0) {
+        hashIsZero = true;
+      } else {
+        this.hashCode = hash;
+      }
+    }
+
+    return hash;
   }
 
   @Override

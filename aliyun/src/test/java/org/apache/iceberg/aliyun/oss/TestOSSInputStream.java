@@ -18,8 +18,8 @@
  */
 package org.apache.iceberg.aliyun.oss;
 
-import static org.junit.Assert.assertArrayEquals;
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -28,8 +28,7 @@ import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.iceberg.io.SeekableInputStream;
 import org.apache.iceberg.relocated.com.google.common.io.ByteStreams;
-import org.assertj.core.api.Assertions;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class TestOSSInputStream extends AliyunOSSTestBase {
   private final Random random = ThreadLocalRandom.current();
@@ -72,7 +71,7 @@ public class TestOSSInputStream extends AliyunOSSTestBase {
       SeekableInputStream in, long rangeStart, int size, byte[] original, boolean buffered)
       throws IOException {
     in.seek(rangeStart);
-    assertEquals("Should have the correct position", rangeStart, in.getPos());
+    assertThat(in.getPos()).as("Should have the correct position").isEqualTo(rangeStart);
 
     long rangeEnd = rangeStart + size;
     byte[] actual = new byte[size];
@@ -86,12 +85,11 @@ public class TestOSSInputStream extends AliyunOSSTestBase {
       }
     }
 
-    assertEquals("Should have the correct position", rangeEnd, in.getPos());
+    assertThat(in.getPos()).as("Should have the correct position").isEqualTo(rangeEnd);
 
-    assertArrayEquals(
-        "Should have expected range data",
-        Arrays.copyOfRange(original, (int) rangeStart, (int) rangeEnd),
-        actual);
+    assertThat(actual)
+        .as("Should have expected range data")
+        .isEqualTo(Arrays.copyOfRange(original, (int) rangeStart, (int) rangeEnd));
   }
 
   @Test
@@ -99,7 +97,7 @@ public class TestOSSInputStream extends AliyunOSSTestBase {
     OSSURI uri = new OSSURI(location("closed.dat"));
     SeekableInputStream closed = new OSSInputStream(ossClient().get(), uri);
     closed.close();
-    Assertions.assertThatThrownBy(() -> closed.seek(0))
+    assertThatThrownBy(() -> closed.seek(0))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("Cannot seek: already closed");
   }
@@ -115,10 +113,9 @@ public class TestOSSInputStream extends AliyunOSSTestBase {
       in.seek(expected.length / 2);
       byte[] actual = new byte[expected.length / 2];
       ByteStreams.readFully(in, actual);
-      assertArrayEquals(
-          "Should have expected seeking stream",
-          Arrays.copyOfRange(expected, expected.length / 2, expected.length),
-          actual);
+      assertThat(actual)
+          .as("Should have expected seeking stream")
+          .isEqualTo(Arrays.copyOfRange(expected, expected.length / 2, expected.length));
     }
   }
 

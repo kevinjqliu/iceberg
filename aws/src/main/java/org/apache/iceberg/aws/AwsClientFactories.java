@@ -112,6 +112,8 @@ public class AwsClientFactories {
           .applyMutation(
               b -> s3FileIOProperties.applyCredentialConfigurations(awsClientProperties, b))
           .applyMutation(s3FileIOProperties::applySignerConfiguration)
+          .applyMutation(s3FileIOProperties::applyS3AccessGrantsConfigurations)
+          .applyMutation(s3FileIOProperties::applyUserAgentConfigurations)
           .build();
     }
 
@@ -121,7 +123,7 @@ public class AwsClientFactories {
           .applyMutation(awsClientProperties::applyClientRegionConfiguration)
           .applyMutation(httpClientProperties::applyHttpClientConfigurations)
           .applyMutation(awsProperties::applyGlueEndpointConfigurations)
-          .applyMutation(awsProperties::applyClientCredentialConfigurations)
+          .applyMutation(awsClientProperties::applyClientCredentialConfigurations)
           .build();
     }
 
@@ -130,7 +132,7 @@ public class AwsClientFactories {
       return KmsClient.builder()
           .applyMutation(awsClientProperties::applyClientRegionConfiguration)
           .applyMutation(httpClientProperties::applyHttpClientConfigurations)
-          .applyMutation(awsProperties::applyClientCredentialConfigurations)
+          .applyMutation(awsClientProperties::applyClientCredentialConfigurations)
           .build();
     }
 
@@ -139,7 +141,7 @@ public class AwsClientFactories {
       return DynamoDbClient.builder()
           .applyMutation(awsClientProperties::applyClientRegionConfiguration)
           .applyMutation(httpClientProperties::applyHttpClientConfigurations)
-          .applyMutation(awsProperties::applyClientCredentialConfigurations)
+          .applyMutation(awsClientProperties::applyClientCredentialConfigurations)
           .applyMutation(awsProperties::applyDynamoDbEndpointConfigurations)
           .build();
     }
@@ -226,7 +228,8 @@ public class AwsClientFactories {
             AwsSessionCredentials.create(accessKeyId, secretAccessKey, sessionToken));
       }
     } else {
-      return DefaultCredentialsProvider.create();
+      // Create a new credential provider for each client
+      return DefaultCredentialsProvider.builder().build();
     }
   }
 }

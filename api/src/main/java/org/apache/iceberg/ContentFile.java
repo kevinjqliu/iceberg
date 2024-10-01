@@ -21,6 +21,7 @@ package org.apache.iceberg;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Superinterface of {@link DataFile} and {@link DeleteFile} that exposes common methods.
@@ -28,6 +29,14 @@ import java.util.Map;
  * @param <F> the concrete Java class of a ContentFile instance.
  */
 public interface ContentFile<F> {
+  /**
+   * Returns the path of the manifest which this file is referenced in or null if it was not read
+   * from a manifest.
+   */
+  default String manifestLocation() {
+    return null;
+  }
+
   /**
    * Returns the ordinal position of the file in a manifest, or null if it was not read from a
    * manifest.
@@ -42,8 +51,18 @@ public interface ContentFile<F> {
    */
   FileContent content();
 
-  /** Returns fully qualified path to the file, suitable for constructing a Hadoop Path. */
+  /**
+   * Returns fully qualified path to the file, suitable for constructing a Hadoop Path.
+   *
+   * @deprecated since 1.7.0, will be removed in 2.0.0; use {@link #location()} instead.
+   */
+  @Deprecated
   CharSequence path();
+
+  /** Return the fully qualified path to the file. */
+  default String location() {
+    return path().toString();
+  }
 
   /** Returns format of the file. */
   FileFormat format();
@@ -164,6 +183,20 @@ public interface ContentFile<F> {
    *     counts, or nan value counts
    */
   F copyWithoutStats();
+
+  /**
+   * Copies this file with column stats only for specific columns. Manifest readers can reuse file
+   * instances; use this method to copy data with stats only for specific columns when collecting
+   * files.
+   *
+   * @param requestedColumnIds column IDs for which to keep stats.
+   * @return a copy of data file, with lower bounds, upper bounds, value counts, null value counts,
+   *     and nan value counts for only specific columns.
+   */
+  default F copyWithStats(Set<Integer> requestedColumnIds) {
+    throw new UnsupportedOperationException(
+        this.getClass().getName() + " doesn't implement copyWithStats");
+  }
 
   /**
    * Copies this file (potentially without file stats). Manifest readers can reuse file instances;

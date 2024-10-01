@@ -18,6 +18,9 @@
  */
 package org.apache.iceberg.aws.glue;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -38,10 +41,10 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.util.concurrent.MoreExecutors;
 import org.apache.iceberg.util.Tasks;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.DeleteTableRequest;
 
@@ -50,26 +53,26 @@ public class TestGlueCatalogLock extends GlueTestBase {
   private static String lockTableName;
   private static DynamoDbClient dynamo;
 
-  @BeforeClass
+  @BeforeAll
   public static void beforeClass() {
     GlueTestBase.beforeClass();
-    String testBucketPath = "s3://" + testBucketName + "/" + testPathPrefix;
+    String testBucketPath = "s3://" + TEST_BUCKET_NAME + "/" + TEST_PATH_PREFIX;
     lockTableName = getRandomName();
     glueCatalog = new GlueCatalog();
     AwsProperties awsProperties = new AwsProperties();
     S3FileIOProperties s3FileIOProperties = new S3FileIOProperties();
-    dynamo = clientFactory.dynamo();
+    dynamo = CLIENT_FACTORY.dynamo();
     glueCatalog.initialize(
-        catalogName,
+        CATALOG_NAME,
         testBucketPath,
         awsProperties,
         s3FileIOProperties,
-        glue,
+        GLUE,
         new DynamoDbLockManager(dynamo, lockTableName),
         ImmutableMap.of());
   }
 
-  @AfterClass
+  @AfterAll
   public static void afterClass() {
     GlueTestBase.afterClass();
     dynamo.deleteTable(DeleteTableRequest.builder().tableName(lockTableName).build());
@@ -105,12 +108,8 @@ public class TestGlueCatalogLock extends GlueTestBase {
         .run(i -> pendingCommits.get(i).commit());
 
     table.refresh();
-    Assert.assertEquals(
-        "Commits should all succeed sequentially", nThreads, table.history().size());
-    Assert.assertEquals(
-        "Should have all manifests",
-        nThreads,
-        table.currentSnapshot().allManifests(table.io()).size());
+    assertThat(table.history()).as("Commits should all succeed sequentially").hasSize(nThreads);
+    assertThat(table.currentSnapshot().allManifests(table.io())).hasSize(nThreads);
   }
 
   @Test
@@ -132,29 +131,26 @@ public class TestGlueCatalogLock extends GlueTestBase {
             (ThreadPoolExecutor) Executors.newFixedThreadPool(2));
 
     AtomicInteger barrier = new AtomicInteger(0);
-    Tasks.range(2)
+    int threadsCount = 2;
+    Tasks.range(threadsCount)
         .stopOnFailure()
         .throwFailureWhenFinished()
         .executeWith(executorService)
         .run(
             index -> {
               for (int numCommittedFiles = 0; numCommittedFiles < 10; numCommittedFiles++) {
-                while (barrier.get() < numCommittedFiles * 2) {
-                  try {
-                    Thread.sleep(10);
-                  } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                }
-
+                final int currentFilesCount = numCommittedFiles;
+                Awaitility.await()
+                    .pollInterval(Duration.ofMillis(10))
+                    .atMost(Duration.ofSeconds(10))
+                    .until(() -> barrier.get() >= currentFilesCount * threadsCount);
                 table.newFastAppend().appendFile(file).commit();
                 barrier.incrementAndGet();
               }
             });
 
     table.refresh();
-    Assert.assertEquals("Commits should all succeed sequentially", 20, table.history().size());
-    Assert.assertEquals(
-        "should have 20 manifests", 20, table.currentSnapshot().allManifests(table.io()).size());
+    assertThat(table.history()).as("Commits should all succeed sequentially").hasSize(20);
+    assertThat(table.currentSnapshot().allManifests(table.io())).hasSize(20);
   }
 }

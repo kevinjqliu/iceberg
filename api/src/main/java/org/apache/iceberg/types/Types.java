@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
@@ -48,6 +49,8 @@ public class Types {
           .put(TimeType.get().toString(), TimeType.get())
           .put(TimestampType.withZone().toString(), TimestampType.withZone())
           .put(TimestampType.withoutZone().toString(), TimestampType.withoutZone())
+          .put(TimestampNanoType.withZone().toString(), TimestampNanoType.withZone())
+          .put(TimestampNanoType.withoutZone().toString(), TimestampNanoType.withoutZone())
           .put(StringType.get().toString(), StringType.get())
           .put(UUIDType.get().toString(), UUIDType.get())
           .put(BinaryType.get().toString(), BinaryType.get())
@@ -255,6 +258,59 @@ public class Types {
     @Override
     public int hashCode() {
       return Objects.hash(TimestampType.class, adjustToUTC);
+    }
+  }
+
+  public static class TimestampNanoType extends PrimitiveType {
+    private static final TimestampNanoType INSTANCE_WITH_ZONE = new TimestampNanoType(true);
+    private static final TimestampNanoType INSTANCE_WITHOUT_ZONE = new TimestampNanoType(false);
+
+    public static TimestampNanoType withZone() {
+      return INSTANCE_WITH_ZONE;
+    }
+
+    public static TimestampNanoType withoutZone() {
+      return INSTANCE_WITHOUT_ZONE;
+    }
+
+    private final boolean adjustToUTC;
+
+    private TimestampNanoType(boolean adjustToUTC) {
+      this.adjustToUTC = adjustToUTC;
+    }
+
+    public boolean shouldAdjustToUTC() {
+      return adjustToUTC;
+    }
+
+    @Override
+    public TypeID typeId() {
+      return TypeID.TIMESTAMP_NANO;
+    }
+
+    @Override
+    public String toString() {
+      if (shouldAdjustToUTC()) {
+        return "timestamptz_ns";
+      } else {
+        return "timestamp_ns";
+      }
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      if (this == other) {
+        return true;
+      } else if (!(other instanceof TimestampNanoType)) {
+        return false;
+      }
+
+      return adjustToUTC == ((TimestampNanoType) other).adjustToUTC;
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(TimestampNanoType.class, adjustToUTC);
     }
   }
 
@@ -474,6 +530,10 @@ public class Types {
       return new NestedField(false, id, name, type, doc);
     }
 
+    public NestedField withFieldId(int newId) {
+      return new NestedField(isOptional, newId, name, type, doc);
+    }
+
     public int fieldId() {
       return id;
     }
@@ -537,6 +597,7 @@ public class Types {
     private final NestedField[] fields;
 
     // lazy values
+    private transient Schema schema = null;
     private transient List<NestedField> fieldList = null;
     private transient Map<String, NestedField> fieldsByName = null;
     private transient Map<String, NestedField> fieldsByLowerCaseName = null;
@@ -590,6 +651,20 @@ public class Types {
     @Override
     public Types.StructType asStructType() {
       return this;
+    }
+
+    /**
+     * Returns a schema which contains the columns inside struct type. This method can be used to
+     * avoid expensive conversion of StructType containing large number of columns to Schema during
+     * manifest evaluation.
+     *
+     * @return the schema containing columns of struct type.
+     */
+    public Schema asSchema() {
+      if (this.schema == null) {
+        this.schema = new Schema(Arrays.asList(this.fields));
+      }
+      return this.schema;
     }
 
     @Override

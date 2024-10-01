@@ -18,12 +18,14 @@
  */
 package org.apache.iceberg.spark.sql;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import org.apache.iceberg.CatalogUtil;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.catalog.Namespace;
@@ -32,35 +34,34 @@ import org.apache.iceberg.hive.HiveCatalog;
 import org.apache.iceberg.hive.TestHiveMetastore;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
-import org.apache.iceberg.spark.SparkCatalogTestBase;
-import org.apache.iceberg.spark.SparkTestBase;
+import org.apache.iceberg.spark.CatalogTestBase;
+import org.apache.iceberg.spark.SparkReadOptions;
+import org.apache.iceberg.spark.TestBase;
+import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.apache.spark.sql.execution.ExplainMode;
+import org.apache.spark.sql.functions;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.TestTemplate;
 
-public class TestAggregatePushDown extends SparkCatalogTestBase {
+public class TestAggregatePushDown extends CatalogTestBase {
 
-  public TestAggregatePushDown(
-      String catalogName, String implementation, Map<String, String> config) {
-    super(catalogName, implementation, config);
-  }
-
-  @BeforeClass
+  @BeforeAll
   public static void startMetastoreAndSpark() {
-    SparkTestBase.metastore = new TestHiveMetastore();
+    TestBase.metastore = new TestHiveMetastore();
     metastore.start();
-    SparkTestBase.hiveConf = metastore.hiveConf();
+    TestBase.hiveConf = metastore.hiveConf();
 
-    SparkTestBase.spark =
+    TestBase.spark =
         SparkSession.builder()
             .master("local[2]")
             .config("spark.sql.iceberg.aggregate_pushdown", "true")
             .enableHiveSupport()
             .getOrCreate();
 
-    SparkTestBase.catalog =
+    TestBase.catalog =
         (HiveCatalog)
             CatalogUtil.loadCatalog(
                 HiveCatalog.class.getName(), "hive", ImmutableMap.of(), hiveConf);
@@ -72,17 +73,17 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     }
   }
 
-  @After
+  @AfterEach
   public void removeTables() {
     sql("DROP TABLE IF EXISTS %s", tableName);
   }
 
-  @Test
+  @TestTemplate
   public void testDifferentDataTypesAggregatePushDownInPartitionedTable() {
     testDifferentDataTypesAggregatePushDown(true);
   }
 
-  @Test
+  @TestTemplate
   public void testDifferentDataTypesAggregatePushDownInNonPartitionedTable() {
     testDifferentDataTypesAggregatePushDown(false);
   }
@@ -148,8 +149,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -181,7 +183,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("min/max/count push down", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testDateAndTimestampWithPartition() {
     sql(
         "CREATE TABLE %s (id bigint, data string, d date, ts timestamp) USING iceberg PARTITIONED BY (id)",
@@ -208,8 +210,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -225,7 +228,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("min/max/count push down", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregateNotPushDownIfOneCantPushDown() {
     sql("CREATE TABLE %s (id LONG, data DOUBLE) USING iceberg", tableName);
     sql(
@@ -240,8 +243,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -249,7 +253,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregatePushDownWithMetricsMode() {
     sql("CREATE TABLE %s (id LONG, data DOUBLE) USING iceberg", tableName);
     sql(
@@ -275,8 +279,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     }
 
     // count(data) is not pushed down because the metrics mode is `none`
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual1 = sql(select1, tableName);
     List<Object[]> expected1 = Lists.newArrayList();
@@ -291,8 +296,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     }
 
     // count(id) is pushed down because the metrics mode is `counts`
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual2 = sql(select2, tableName);
     List<Object[]> expected2 = Lists.newArrayList();
@@ -309,8 +315,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
 
     // COUNT(id), MAX(id) are not pushed down because MAX(id) is not pushed down (metrics mode is
     // `counts`)
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual3 = sql(select3, tableName);
     List<Object[]> expected3 = Lists.newArrayList();
@@ -318,7 +325,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected3, actual3);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregateNotPushDownForStringType() {
     sql("CREATE TABLE %s (id LONG, data STRING) USING iceberg", tableName);
     sql(
@@ -337,8 +344,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual1 = sql(select1, tableName);
     List<Object[]> expected1 = Lists.newArrayList();
@@ -352,8 +360,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual2 = sql(select2, tableName);
     List<Object[]> expected2 = Lists.newArrayList();
@@ -371,8 +380,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual3 = sql(select3, tableName);
     List<Object[]> expected3 = Lists.newArrayList();
@@ -380,12 +390,12 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected3, actual3);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregatePushDownWithDataFilter() {
     testAggregatePushDownWithFilter(false);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregatePushDownWithPartitionFilter() {
     testAggregatePushDownWithFilter(true);
   }
@@ -421,13 +431,14 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
 
     if (!partitionFilerOnly) {
       // Filters are not completely pushed down, we can't push down aggregates
-      Assert.assertFalse(
-          "explain should not contain the pushed down aggregates",
-          explainContainsPushDownAggregates);
+      assertThat(explainContainsPushDownAggregates)
+          .as("explain should not contain the pushed down aggregates")
+          .isFalse();
     } else {
       // Filters are not completely pushed down, we can push down aggregates
-      Assert.assertTrue(
-          "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+      assertThat(explainContainsPushDownAggregates)
+          .as("explain should contain the pushed down aggregates")
+          .isTrue();
     }
 
     List<Object[]> actual = sql(select, tableName);
@@ -436,7 +447,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregateWithComplexType() {
     sql("CREATE TABLE %s (id INT, complex STRUCT<c1:INT,c2:STRING>) USING iceberg", tableName);
     sql(
@@ -451,8 +462,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse(
-        "count not pushed down for complex types", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("count not pushed down for complex types")
+        .isFalse();
 
     List<Object[]> actual = sql(select1, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -467,10 +479,126 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse("max not pushed down for complex types", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("max not pushed down for complex types")
+        .isFalse();
   }
 
-  @Test
+  @TestTemplate
+  public void testAggregationPushdownStructInteger() {
+    sql("CREATE TABLE %s (id BIGINT, struct_with_int STRUCT<c1:BIGINT>) USING iceberg", tableName);
+    sql("INSERT INTO TABLE %s VALUES (1, named_struct(\"c1\", NULL))", tableName);
+    sql("INSERT INTO TABLE %s VALUES (2, named_struct(\"c1\", 2))", tableName);
+    sql("INSERT INTO TABLE %s VALUES (3, named_struct(\"c1\", 3))", tableName);
+
+    String query = "SELECT COUNT(%s), MAX(%s), MIN(%s) FROM %s";
+    String aggField = "struct_with_int.c1";
+    assertAggregates(sql(query, aggField, aggField, aggField, tableName), 2L, 3L, 2L);
+    assertExplainContains(
+        sql("EXPLAIN " + query, aggField, aggField, aggField, tableName),
+        "count(struct_with_int.c1)",
+        "max(struct_with_int.c1)",
+        "min(struct_with_int.c1)");
+  }
+
+  @TestTemplate
+  public void testAggregationPushdownNestedStruct() {
+    sql(
+        "CREATE TABLE %s (id BIGINT, struct_with_int STRUCT<c1:STRUCT<c2:STRUCT<c3:STRUCT<c4:BIGINT>>>>) USING iceberg",
+        tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (1, named_struct(\"c1\", named_struct(\"c2\", named_struct(\"c3\", named_struct(\"c4\", NULL)))))",
+        tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (2, named_struct(\"c1\", named_struct(\"c2\", named_struct(\"c3\", named_struct(\"c4\", 2)))))",
+        tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (3, named_struct(\"c1\", named_struct(\"c2\", named_struct(\"c3\", named_struct(\"c4\", 3)))))",
+        tableName);
+
+    String query = "SELECT COUNT(%s), MAX(%s), MIN(%s) FROM %s";
+    String aggField = "struct_with_int.c1.c2.c3.c4";
+
+    assertAggregates(sql(query, aggField, aggField, aggField, tableName), 2L, 3L, 2L);
+
+    assertExplainContains(
+        sql("EXPLAIN " + query, aggField, aggField, aggField, tableName),
+        "count(struct_with_int.c1.c2.c3.c4)",
+        "max(struct_with_int.c1.c2.c3.c4)",
+        "min(struct_with_int.c1.c2.c3.c4)");
+  }
+
+  @TestTemplate
+  public void testAggregationPushdownStructTimestamp() {
+    sql(
+        "CREATE TABLE %s (id BIGINT, struct_with_ts STRUCT<c1:TIMESTAMP>) USING iceberg",
+        tableName);
+    sql("INSERT INTO TABLE %s VALUES (1, named_struct(\"c1\", NULL))", tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (2, named_struct(\"c1\", timestamp('2023-01-30T22:22:22Z')))",
+        tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (3, named_struct(\"c1\", timestamp('2023-01-30T22:23:23Z')))",
+        tableName);
+
+    String query = "SELECT COUNT(%s), MAX(%s), MIN(%s) FROM %s";
+    String aggField = "struct_with_ts.c1";
+
+    assertAggregates(
+        sql(query, aggField, aggField, aggField, tableName),
+        2L,
+        new Timestamp(1675117403000L),
+        new Timestamp(1675117342000L));
+
+    assertExplainContains(
+        sql("EXPLAIN " + query, aggField, aggField, aggField, tableName),
+        "count(struct_with_ts.c1)",
+        "max(struct_with_ts.c1)",
+        "min(struct_with_ts.c1)");
+  }
+
+  @TestTemplate
+  public void testAggregationPushdownOnBucketedColumn() {
+    sql(
+        "CREATE TABLE %s (id BIGINT, struct_with_int STRUCT<c1:INT>) USING iceberg PARTITIONED BY (bucket(8, id))",
+        tableName);
+
+    sql("INSERT INTO TABLE %s VALUES (1, named_struct(\"c1\", NULL))", tableName);
+    sql("INSERT INTO TABLE %s VALUES (null, named_struct(\"c1\", 2))", tableName);
+    sql("INSERT INTO TABLE %s VALUES (2, named_struct(\"c1\", 3))", tableName);
+
+    String query = "SELECT COUNT(%s), MAX(%s), MIN(%s) FROM %s";
+    String aggField = "id";
+    assertAggregates(sql(query, aggField, aggField, aggField, tableName), 2L, 2L, 1L);
+    assertExplainContains(
+        sql("EXPLAIN " + query, aggField, aggField, aggField, tableName),
+        "count(id)",
+        "max(id)",
+        "min(id)");
+  }
+
+  private void assertAggregates(
+      List<Object[]> actual, Object expectedCount, Object expectedMax, Object expectedMin) {
+    Object actualCount = actual.get(0)[0];
+    Object actualMax = actual.get(0)[1];
+    Object actualMin = actual.get(0)[2];
+
+    assertThat(actualCount).as("Expected and actual count should equal").isEqualTo(expectedCount);
+    assertThat(actualMax).as("Expected and actual max should equal").isEqualTo(expectedMax);
+    assertThat(actualMin).as("Expected and actual min should equal").isEqualTo(expectedMin);
+  }
+
+  private void assertExplainContains(List<Object[]> explain, String... expectedFragments) {
+    String explainString = explain.get(0)[0].toString().toLowerCase(Locale.ROOT);
+    Arrays.stream(expectedFragments)
+        .forEach(
+            fragment ->
+                assertThat(explainString)
+                    .as("Expected to find plan fragment in explain plan")
+                    .contains(fragment));
+  }
+
+  @TestTemplate
   public void testAggregatePushDownInDeleteCopyOnWrite() {
     sql("CREATE TABLE %s (id LONG, data INT) USING iceberg", tableName);
     sql(
@@ -488,7 +616,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue("min/max/count pushed down for deleted", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("min/max/count pushed down for deleted")
+        .isTrue();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -496,7 +626,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("min/max/count push down", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testAggregatePushDownForTimeTravel() {
     sql("CREATE TABLE %s (id LONG, data INT) USING iceberg", tableName);
     sql(
@@ -516,7 +646,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     if (explainString1.contains("count(id)")) {
       explainContainsPushDownAggregates1 = true;
     }
-    Assert.assertTrue("count pushed down", explainContainsPushDownAggregates1);
+    assertThat(explainContainsPushDownAggregates1).as("count pushed down").isTrue();
 
     List<Object[]> actual1 =
         sql("SELECT count(id) FROM %s VERSION AS OF %s", tableName, snapshotId);
@@ -529,13 +659,13 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates2 = true;
     }
 
-    Assert.assertTrue("count pushed down", explainContainsPushDownAggregates2);
+    assertThat(explainContainsPushDownAggregates2).as("count pushed down").isTrue();
 
     List<Object[]> actual2 = sql("SELECT count(id) FROM %s", tableName);
     assertEquals("count push down", expected2, actual2);
   }
 
-  @Test
+  @TestTemplate
   public void testAllNull() {
     sql("CREATE TABLE %s (id int, data int) USING iceberg PARTITIONED BY (id)", tableName);
     sql(
@@ -557,8 +687,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -566,7 +697,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("min/max/count push down", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testAllNaN() {
     sql("CREATE TABLE %s (id int, data float) USING iceberg PARTITIONED BY (id)", tableName);
     sql(
@@ -588,8 +719,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -597,7 +729,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testNaN() {
     sql("CREATE TABLE %s (id int, data float) USING iceberg PARTITIONED BY (id)", tableName);
     sql(
@@ -619,8 +751,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertFalse(
-        "explain should not contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should not contain the pushed down aggregates")
+        .isFalse();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -628,7 +761,7 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
     assertEquals("expected and actual should equal", expected, actual);
   }
 
-  @Test
+  @TestTemplate
   public void testInfinity() {
     sql(
         "CREATE TABLE %s (id int, data1 float, data2 double, data3 double) USING iceberg PARTITIONED BY (id)",
@@ -659,8 +792,9 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
       explainContainsPushDownAggregates = true;
     }
 
-    Assert.assertTrue(
-        "explain should contain the pushed down aggregates", explainContainsPushDownAggregates);
+    assertThat(explainContainsPushDownAggregates)
+        .as("explain should contain the pushed down aggregates")
+        .isTrue();
 
     List<Object[]> actual = sql(select, tableName);
     List<Object[]> expected = Lists.newArrayList();
@@ -678,5 +812,50 @@ public class TestAggregatePushDown extends SparkCatalogTestBase {
           6L
         });
     assertEquals("min/max/count push down", expected, actual);
+  }
+
+  @TestTemplate
+  public void testAggregatePushDownForIncrementalScan() {
+    sql("CREATE TABLE %s (id LONG, data INT) USING iceberg", tableName);
+    sql(
+        "INSERT INTO TABLE %s VALUES (1, 1111), (1, 2222), (2, 3333), (2, 4444), (3, 5555), (3, 6666) ",
+        tableName);
+    long snapshotId1 = validationCatalog.loadTable(tableIdent).currentSnapshot().snapshotId();
+    sql("INSERT INTO %s VALUES (4, 7777), (5, 8888)", tableName);
+    long snapshotId2 = validationCatalog.loadTable(tableIdent).currentSnapshot().snapshotId();
+    sql("INSERT INTO %s VALUES (6, -7777), (7, 8888)", tableName);
+    long snapshotId3 = validationCatalog.loadTable(tableIdent).currentSnapshot().snapshotId();
+    sql("INSERT INTO %s VALUES (8, 7777), (9, 9999)", tableName);
+
+    Dataset<Row> pushdownDs =
+        spark
+            .read()
+            .format("iceberg")
+            .option(SparkReadOptions.START_SNAPSHOT_ID, snapshotId2)
+            .option(SparkReadOptions.END_SNAPSHOT_ID, snapshotId3)
+            .load(tableName)
+            .agg(functions.min("data"), functions.max("data"), functions.count("data"));
+    String explain1 = pushdownDs.queryExecution().explainString(ExplainMode.fromString("simple"));
+    assertThat(explain1).contains("LocalTableScan", "min(data)", "max(data)", "count(data)");
+
+    List<Object[]> expected1 = Lists.newArrayList();
+    expected1.add(new Object[] {-7777, 8888, 2L});
+    assertEquals("min/max/count push down", expected1, rowsToJava(pushdownDs.collectAsList()));
+
+    Dataset<Row> unboundedPushdownDs =
+        spark
+            .read()
+            .format("iceberg")
+            .option(SparkReadOptions.START_SNAPSHOT_ID, snapshotId1)
+            .load(tableName)
+            .agg(functions.min("data"), functions.max("data"), functions.count("data"));
+    String explain2 =
+        unboundedPushdownDs.queryExecution().explainString(ExplainMode.fromString("simple"));
+    assertThat(explain2).contains("LocalTableScan", "min(data)", "max(data)", "count(data)");
+
+    List<Object[]> expected2 = Lists.newArrayList();
+    expected2.add(new Object[] {-7777, 9999, 6L});
+    assertEquals(
+        "min/max/count push down", expected2, rowsToJava(unboundedPushdownDs.collectAsList()));
   }
 }

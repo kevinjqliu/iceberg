@@ -65,7 +65,7 @@ public class ViewVersionParser {
     generator.writeEndObject();
   }
 
-  static String toJson(ViewVersion version) {
+  public static String toJson(ViewVersion version) {
     return JsonUtil.generate(gen -> toJson(version, gen), false);
   }
 
@@ -84,12 +84,14 @@ public class ViewVersionParser {
     long timestamp = JsonUtil.getLong(TIMESTAMP_MS, node);
     Map<String, String> summary = JsonUtil.getStringMap(SUMMARY, node);
 
-    JsonNode serializedRepresentations = node.get(REPRESENTATIONS);
+    JsonNode serializedRepresentations = JsonUtil.get(REPRESENTATIONS, node);
+    Preconditions.checkArgument(
+        serializedRepresentations.isArray(),
+        "Cannot parse representations from non-array: %s",
+        serializedRepresentations);
     ImmutableList.Builder<ViewRepresentation> representations = ImmutableList.builder();
     for (JsonNode serializedRepresentation : serializedRepresentations) {
-      ViewRepresentation representation =
-          ViewRepresentationParser.fromJson(serializedRepresentation);
-      representations.add(representation);
+      representations.add(ViewRepresentationParser.fromJson(serializedRepresentation));
     }
 
     String defaultCatalog = JsonUtil.getStringOrNull(DEFAULT_CATALOG, node);

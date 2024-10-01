@@ -19,8 +19,8 @@
 package org.apache.iceberg.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 public class TestLocationUtil {
@@ -53,9 +53,35 @@ public class TestLocationUtil {
     String[] invalidPaths = new String[] {null, ""};
 
     for (String invalidPath : invalidPaths) {
-      Assertions.assertThatThrownBy(() -> LocationUtil.stripTrailingSlash(invalidPath))
+      assertThatThrownBy(() -> LocationUtil.stripTrailingSlash(invalidPath))
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessage("path must not be null or empty");
     }
+  }
+
+  @Test
+  void testDoNotStripTrailingSlashForRootPath() {
+    String rootPath = "blobstore://";
+    assertThat(LocationUtil.stripTrailingSlash(rootPath))
+        .as("Should be root path")
+        .isEqualTo(rootPath);
+  }
+
+  @Test
+  void testStripTrailingSlashForRootPathWithTrailingSlash() {
+    String rootPath = "blobstore://";
+    String rootPathWithTrailingSlash = rootPath + "/";
+    assertThat(LocationUtil.stripTrailingSlash(rootPathWithTrailingSlash))
+        .as("Should be root path")
+        .isEqualTo(rootPath);
+  }
+
+  @Test
+  void testStripTrailingSlashForRootPathWithTrailingSlashes() {
+    String rootPath = "blobstore://";
+    String rootPathWithMultipleTrailingSlash = rootPath + "///";
+    assertThat(LocationUtil.stripTrailingSlash(rootPathWithMultipleTrailingSlash))
+        .as("Should be root path")
+        .isEqualTo(rootPath);
   }
 }

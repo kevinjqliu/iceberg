@@ -20,7 +20,6 @@ package org.apache.iceberg.aws;
 
 import java.io.Serializable;
 import java.net.URI;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -30,18 +29,13 @@ import org.apache.iceberg.common.DynClasses;
 import org.apache.iceberg.common.DynMethods;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.base.Strings;
-import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.util.PropertyUtil;
-import org.apache.iceberg.util.SerializableMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.awscore.client.builder.AwsClientBuilder;
 import software.amazon.awssdk.core.client.builder.SdkClientBuilder;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.regions.providers.DefaultAwsRegionProviderChain;
@@ -49,8 +43,6 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClientBuilder;
 import software.amazon.awssdk.services.glue.GlueClientBuilder;
 
 public class AwsProperties implements Serializable {
-
-  private static final Logger LOG = LoggerFactory.getLogger(AwsProperties.class);
 
   /**
    * The ID of the Glue Data Catalog where the tables reside. If none is provided, Glue
@@ -214,37 +206,32 @@ public class AwsProperties implements Serializable {
    */
   public static final String REST_SESSION_TOKEN = "rest.session-token";
 
-  private static final String HTTP_CLIENT_PREFIX = "http-client.";
-  private final Map<String, String> httpClientProperties;
   private final Set<software.amazon.awssdk.services.sts.model.Tag> stsClientAssumeRoleTags;
 
-  private String clientAssumeRoleArn;
-  private String clientAssumeRoleExternalId;
-  private int clientAssumeRoleTimeoutSec;
-  private String clientAssumeRoleRegion;
-  private String clientAssumeRoleSessionName;
-  private String clientRegion;
-  private String clientCredentialsProvider;
+  private final String clientAssumeRoleArn;
+  private final String clientAssumeRoleExternalId;
+  private final int clientAssumeRoleTimeoutSec;
+  private final String clientAssumeRoleRegion;
+  private final String clientAssumeRoleSessionName;
+  private final String clientCredentialsProvider;
   private final Map<String, String> clientCredentialsProviderProperties;
 
-  private String glueEndpoint;
+  private final String glueEndpoint;
   private String glueCatalogId;
   private boolean glueCatalogSkipArchive;
   private boolean glueCatalogSkipNameValidation;
   private boolean glueLakeFormationEnabled;
 
   private String dynamoDbTableName;
-  private String dynamoDbEndpoint;
-  private final Map<String, String> allProperties;
+  private final String dynamoDbEndpoint;
 
   private String restSigningRegion;
-  private String restSigningName;
+  private final String restSigningName;
   private String restAccessKeyId;
   private String restSecretAccessKey;
   private String restSessionToken;
 
   public AwsProperties() {
-    this.httpClientProperties = Collections.emptyMap();
     this.stsClientAssumeRoleTags = Sets.newHashSet();
 
     this.clientAssumeRoleArn = null;
@@ -252,7 +239,6 @@ public class AwsProperties implements Serializable {
     this.clientAssumeRoleExternalId = null;
     this.clientAssumeRoleRegion = null;
     this.clientAssumeRoleSessionName = null;
-    this.clientRegion = null;
     this.clientCredentialsProvider = null;
     this.clientCredentialsProviderProperties = null;
 
@@ -265,15 +251,11 @@ public class AwsProperties implements Serializable {
     this.dynamoDbEndpoint = null;
     this.dynamoDbTableName = DYNAMODB_TABLE_NAME_DEFAULT;
 
-    this.allProperties = Maps.newHashMap();
-
     this.restSigningName = REST_SIGNING_NAME_DEFAULT;
   }
 
   @SuppressWarnings("MethodLength")
   public AwsProperties(Map<String, String> properties) {
-    this.httpClientProperties =
-        PropertyUtil.filterProperties(properties, key -> key.startsWith(HTTP_CLIENT_PREFIX));
     this.stsClientAssumeRoleTags = toStsTags(properties, CLIENT_ASSUME_ROLE_TAGS_PREFIX);
     this.clientAssumeRoleArn = properties.get(CLIENT_ASSUME_ROLE_ARN);
     this.clientAssumeRoleTimeoutSec =
@@ -282,7 +264,6 @@ public class AwsProperties implements Serializable {
     this.clientAssumeRoleExternalId = properties.get(CLIENT_ASSUME_ROLE_EXTERNAL_ID);
     this.clientAssumeRoleRegion = properties.get(CLIENT_ASSUME_ROLE_REGION);
     this.clientAssumeRoleSessionName = properties.get(CLIENT_ASSUME_ROLE_SESSION_NAME);
-    this.clientRegion = properties.get(AwsClientProperties.CLIENT_REGION);
     this.clientCredentialsProvider =
         properties.get(AwsClientProperties.CLIENT_CREDENTIALS_PROVIDER);
     this.clientCredentialsProviderProperties =
@@ -306,8 +287,6 @@ public class AwsProperties implements Serializable {
     this.dynamoDbEndpoint = properties.get(DYNAMODB_ENDPOINT);
     this.dynamoDbTableName =
         PropertyUtil.propertyAsString(properties, DYNAMODB_TABLE_NAME, DYNAMODB_TABLE_NAME_DEFAULT);
-
-    this.allProperties = SerializableMap.copyOf(properties);
 
     this.restSigningRegion = properties.get(REST_SIGNER_REGION);
     this.restSigningName = properties.getOrDefault(REST_SIGNING_NAME, REST_SIGNING_NAME_DEFAULT);
@@ -378,40 +357,6 @@ public class AwsProperties implements Serializable {
 
   public void setDynamoDbTableName(String name) {
     this.dynamoDbTableName = name;
-  }
-
-  /** @deprecated will be removed in 1.5.0, use {@link HttpClientProperties} instead */
-  @Deprecated
-  public Map<String, String> httpClientProperties() {
-    return httpClientProperties;
-  }
-
-  /**
-   * @deprecated will be removed in 1.5.0, use {@link AwsClientProperties#clientRegion()} instead
-   */
-  @Deprecated
-  public String clientRegion() {
-    return clientRegion;
-  }
-
-  /**
-   * @deprecated will be removed in 1.5.0, use {@link AwsClientProperties#setClientRegion(String)}
-   *     instead
-   */
-  @Deprecated
-  public void setClientRegion(String clientRegion) {
-    this.clientRegion = clientRegion;
-  }
-
-  /**
-   * @deprecated will be removed in 1.5.0, use {@link
-   *     AwsClientProperties#applyClientCredentialConfigurations(AwsClientBuilder)} instead
-   */
-  @Deprecated
-  public <T extends AwsClientBuilder> void applyClientCredentialConfigurations(T builder) {
-    if (!Strings.isNullOrEmpty(this.clientCredentialsProvider)) {
-      builder.credentialsProvider(credentialsProvider(this.clientCredentialsProvider));
-    }
   }
 
   /**
@@ -485,7 +430,8 @@ public class AwsProperties implements Serializable {
       return credentialsProvider(this.clientCredentialsProvider);
     }
 
-    return DefaultCredentialsProvider.create();
+    // Create a new credential provider for each client
+    return DefaultCredentialsProvider.builder().build();
   }
 
   private AwsCredentialsProvider credentialsProvider(String credentialsProviderClass) {

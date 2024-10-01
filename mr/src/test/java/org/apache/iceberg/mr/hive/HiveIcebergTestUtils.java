@@ -19,6 +19,7 @@
 package org.apache.iceberg.mr.hive;
 
 import static org.apache.iceberg.types.Types.NestedField.optional;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,6 +39,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.serde2.io.DateWritable;
@@ -63,7 +65,6 @@ import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.ByteBuffers;
-import org.junit.Assert;
 
 public class HiveIcebergTestUtils {
   // TODO: Can this be a constant all around the Iceberg tests?
@@ -218,13 +219,10 @@ public class HiveIcebergTestUtils {
     for (int i = 0; i < expected.size(); ++i) {
       if (expected.get(i) instanceof OffsetDateTime) {
         // For OffsetDateTime we just compare the actual instant
-        Assert.assertEquals(
-            ((OffsetDateTime) expected.get(i)).toInstant(),
-            ((OffsetDateTime) actual.get(i)).toInstant());
-      } else if (expected.get(i) instanceof byte[]) {
-        Assert.assertArrayEquals((byte[]) expected.get(i), (byte[]) actual.get(i));
+        assertThat(((OffsetDateTime) actual.get(i)).toInstant())
+            .isEqualTo(((OffsetDateTime) expected.get(i)).toInstant());
       } else {
-        Assert.assertEquals(expected.get(i), actual.get(i));
+        assertThat(actual.get(i)).isEqualTo(expected.get(i));
       }
     }
   }
@@ -265,7 +263,7 @@ public class HiveIcebergTestUtils {
     sortedExpected.sort(Comparator.comparingLong(record -> (Long) record.get(sortBy)));
     sortedActual.sort(Comparator.comparingLong(record -> (Long) record.get(sortBy)));
 
-    Assert.assertEquals(sortedExpected.size(), sortedActual.size());
+    assertThat(sortedActual).hasSameSizeAs(sortedExpected);
     for (int i = 0; i < sortedExpected.size(); ++i) {
       assertEquals(sortedExpected.get(i), sortedActual.get(i));
     }
@@ -282,15 +280,18 @@ public class HiveIcebergTestUtils {
    */
   public static void validateFiles(Table table, Configuration conf, JobID jobId, int dataFileNum)
       throws IOException {
-    List<Path> dataFiles =
-        Files.walk(Paths.get(table.location() + "/data"))
-            .filter(Files::isRegularFile)
-            .filter(path -> !path.getFileName().toString().startsWith("."))
-            .collect(Collectors.toList());
+    List<Path> dataFiles;
+    try (Stream<Path> files = Files.walk(Paths.get(table.location() + "/data"))) {
+      dataFiles =
+          files
+              .filter(Files::isRegularFile)
+              .filter(path -> !path.getFileName().toString().startsWith("."))
+              .collect(Collectors.toList());
+    }
 
-    Assert.assertEquals(dataFileNum, dataFiles.size());
-    Assert.assertFalse(
-        new File(HiveIcebergOutputCommitter.generateJobLocation(table.location(), conf, jobId))
-            .exists());
+    assertThat(dataFiles).hasSize(dataFileNum);
+    assertThat(
+            new File(HiveIcebergOutputCommitter.generateJobLocation(table.location(), conf, jobId)))
+        .doesNotExist();
   }
 }

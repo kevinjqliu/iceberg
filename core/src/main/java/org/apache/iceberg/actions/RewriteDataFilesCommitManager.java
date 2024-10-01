@@ -18,12 +18,15 @@
  */
 package org.apache.iceberg.actions;
 
+import java.util.Map;
 import java.util.Set;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.RewriteFiles;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.exceptions.CleanableFailure;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.util.Tasks;
 import org.slf4j.Logger;
@@ -36,6 +39,7 @@ public class RewriteDataFilesCommitManager {
   private final Table table;
   private final long startingSnapshotId;
   private final boolean useStartingSequenceNumber;
+  private final Map<String, String> snapshotProperties;
 
   // constructor used for testing
   public RewriteDataFilesCommitManager(Table table) {
@@ -48,9 +52,18 @@ public class RewriteDataFilesCommitManager {
 
   public RewriteDataFilesCommitManager(
       Table table, long startingSnapshotId, boolean useStartingSequenceNumber) {
+    this(table, startingSnapshotId, useStartingSequenceNumber, ImmutableMap.of());
+  }
+
+  public RewriteDataFilesCommitManager(
+      Table table,
+      long startingSnapshotId,
+      boolean useStartingSequenceNumber,
+      Map<String, String> snapshotProperties) {
     this.table = table;
     this.startingSnapshotId = startingSnapshotId;
     this.useStartingSequenceNumber = useStartingSequenceNumber;
+    this.snapshotProperties = snapshotProperties;
   }
 
   /**
@@ -74,6 +87,8 @@ public class RewriteDataFilesCommitManager {
     } else {
       rewrite.rewriteFiles(rewrittenDataFiles, addedDataFiles);
     }
+
+    snapshotProperties.forEach(rewrite::set);
 
     rewrite.commit();
   }
@@ -105,8 +120,12 @@ public class RewriteDataFilesCommitManager {
           e);
       throw e;
     } catch (Exception e) {
-      LOG.error("Cannot commit groups {}, attempting to clean up written files", rewriteGroups, e);
-      rewriteGroups.forEach(this::abortFileGroup);
+      if (e instanceof CleanableFailure) {
+        LOG.error(
+            "Cannot commit groups {}, attempting to clean up written files", rewriteGroups, e);
+        rewriteGroups.forEach(this::abortFileGroup);
+      }
+
       throw e;
     }
   }

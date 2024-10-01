@@ -22,6 +22,8 @@ import static org.apache.iceberg.ManifestContent.DATA;
 import static org.apache.iceberg.ManifestContent.DELETES;
 import static org.apache.iceberg.types.Types.NestedField.optional;
 import static org.apache.iceberg.types.Types.NestedField.required;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +40,6 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecordBuilder;
-import org.apache.iceberg.AssertHelpers;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.Files;
@@ -92,7 +93,6 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.functions;
 import org.apache.spark.sql.internal.SQLConf;
 import org.apache.spark.sql.types.StructType;
-import org.assertj.core.api.Assertions;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Rule;
@@ -1119,17 +1119,17 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
 
     if (!spark.version().startsWith("2")) {
       // Spark 2 isn't able to actually push down nested struct projections so this will not break
-      AssertHelpers.assertThrows(
-          "Can't prune struct inside list",
-          SparkException.class,
-          "Cannot project a partial list element struct",
-          () ->
-              spark
-                  .read()
-                  .format("iceberg")
-                  .load(loadLocation(tableIdentifier, "manifests"))
-                  .select("partition_spec_id", "path", "partition_summaries.contains_null")
-                  .collectAsList());
+      assertThatThrownBy(
+              () ->
+                  spark
+                      .read()
+                      .format("iceberg")
+                      .load(loadLocation(tableIdentifier, "manifests"))
+                      .select("partition_spec_id", "path", "partition_summaries.contains_null")
+                      .collectAsList())
+          .as("Can't prune struct inside list")
+          .isInstanceOf(SparkException.class)
+          .hasMessageContaining("Cannot project a partial list element struct");
     }
 
     Dataset<Row> actualDf =
@@ -1602,9 +1602,15 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
     Table table = createTable(tableIdentifier, SCHEMA, SPEC);
     Table partitionsTable = loadTable(tableIdentifier, "partitions");
     Dataset<Row> df1 =
-        spark.createDataFrame(Lists.newArrayList(new SimpleRecord(1, "a")), SimpleRecord.class);
+        spark.createDataFrame(
+            Lists.newArrayList(
+                new SimpleRecord(1, "a"), new SimpleRecord(1, "b"), new SimpleRecord(1, "c")),
+            SimpleRecord.class);
     Dataset<Row> df2 =
-        spark.createDataFrame(Lists.newArrayList(new SimpleRecord(2, "b")), SimpleRecord.class);
+        spark.createDataFrame(
+            Lists.newArrayList(
+                new SimpleRecord(2, "d"), new SimpleRecord(2, "e"), new SimpleRecord(2, "f")),
+            SimpleRecord.class);
 
     df1.select("id", "data")
         .write()
@@ -1624,8 +1630,9 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
 
     // test position deletes
     table.updateProperties().set(TableProperties.FORMAT_VERSION, "2").commit();
-    DeleteFile deleteFile = writePosDeleteFile(table);
-    table.newRowDelta().addDeletes(deleteFile).commit();
+    DeleteFile deleteFile1 = writePosDeleteFile(table, 0);
+    DeleteFile deleteFile2 = writePosDeleteFile(table, 1);
+    table.newRowDelta().addDeletes(deleteFile1).addDeletes(deleteFile2).commit();
     table.refresh();
     long posDeleteCommitId = table.currentSnapshot().snapshotId();
 
@@ -1648,7 +1655,7 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
     expected.add(
         builder
             .set("partition", partitionBuilder.set("id", 1).build())
-            .set("record_count", 1L)
+            .set("record_count", 3L)
             .set("file_count", 1)
             .set(
                 "total_data_file_size_in_bytes",
@@ -1664,13 +1671,13 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
     expected.add(
         builder
             .set("partition", partitionBuilder.set("id", 2).build())
-            .set("record_count", 1L)
+            .set("record_count", 3L)
             .set("file_count", 1)
             .set(
                 "total_data_file_size_in_bytes",
                 totalSizeInBytes(table.snapshot(firstCommitId).addedDataFiles(table.io())))
-            .set("position_delete_record_count", 1L) // should be incremented now
-            .set("position_delete_file_count", 1) // should be incremented now
+            .set("position_delete_record_count", 2L) // should be incremented now
+            .set("position_delete_file_count", 2) // should be incremented now
             .set("equality_delete_record_count", 0L)
             .set("equality_delete_file_count", 0)
             .set("spec_id", 0)
@@ -1684,8 +1691,9 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
     }
 
     // test equality delete
-    DeleteFile eqDeleteFile = writeEqDeleteFile(table);
-    table.newRowDelta().addDeletes(eqDeleteFile).commit();
+    DeleteFile eqDeleteFile1 = writeEqDeleteFile(table, "d");
+    DeleteFile eqDeleteFile2 = writeEqDeleteFile(table, "f");
+    table.newRowDelta().addDeletes(eqDeleteFile1).addDeletes(eqDeleteFile2).commit();
     table.refresh();
     long eqDeleteCommitId = table.currentSnapshot().snapshotId();
     actual =
@@ -1701,13 +1709,12 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
         0,
         builder
             .set("partition", partitionBuilder.set("id", 1).build())
-            .set("record_count", 1L)
+            .set("record_count", 3L)
             .set("file_count", 1)
             .set("position_delete_record_count", 0L)
             .set("position_delete_file_count", 0)
-            .set("equality_delete_record_count", 1L) // should be incremented now
-            .set("equality_delete_file_count", 1) // should be incremented now
-            .set("spec_id", 0)
+            .set("equality_delete_record_count", 2L) // should be incremented now
+            .set("equality_delete_file_count", 2) // should be incremented now
             .set("last_updated_at", table.snapshot(eqDeleteCommitId).timestampMillis() * 1000)
             .set("last_updated_snapshot_id", eqDeleteCommitId)
             .build());
@@ -2014,8 +2021,13 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
         .save(loadLocation(tableIdentifier));
 
     List<Integer> actual =
-        spark.read().format("iceberg").load(loadLocation(tableIdentifier, "files"))
-            .sort(DataFile.SPEC_ID.name()).collectAsList().stream()
+        spark
+            .read()
+            .format("iceberg")
+            .load(loadLocation(tableIdentifier, "files"))
+            .sort(DataFile.SPEC_ID.name())
+            .collectAsList()
+            .stream()
             .map(r -> (Integer) r.getAs(DataFile.SPEC_ID.name()))
             .collect(Collectors.toList());
 
@@ -2149,20 +2161,28 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
             stagingLocation);
 
         // validate we get the expected results back
-        List<Row> expected = spark.table("parquet_table").select("tmp_col").collectAsList();
-        List<Row> actual =
-            spark
-                .read()
-                .format("iceberg")
-                .load(loadLocation(tableIdentifier))
-                .select("tmp_col")
-                .collectAsList();
-        Assertions.assertThat(actual)
-            .as("Rows must match")
-            .containsExactlyInAnyOrderElementsOf(expected);
+        testWithFilter("tmp_col < to_timestamp('2000-01-31 08:30:00')", tableIdentifier);
+        testWithFilter("tmp_col <= to_timestamp('2000-01-31 08:30:00')", tableIdentifier);
+        testWithFilter("tmp_col == to_timestamp('2000-01-31 08:30:00')", tableIdentifier);
+        testWithFilter("tmp_col > to_timestamp('2000-01-31 08:30:00')", tableIdentifier);
+        testWithFilter("tmp_col >= to_timestamp('2000-01-31 08:30:00')", tableIdentifier);
         dropTable(tableIdentifier);
       }
     }
+  }
+
+  private void testWithFilter(String filterExpr, TableIdentifier tableIdentifier) {
+    List<Row> expected =
+        spark.table("parquet_table").select("tmp_col").filter(filterExpr).collectAsList();
+    List<Row> actual =
+        spark
+            .read()
+            .format("iceberg")
+            .load(loadLocation(tableIdentifier))
+            .select("tmp_col")
+            .filter(filterExpr)
+            .collectAsList();
+    assertThat(actual).as("Rows must match").containsExactlyInAnyOrderElementsOf(expected);
   }
 
   private GenericData.Record manifestRecord(
@@ -2240,22 +2260,26 @@ public abstract class TestIcebergSourceTablesBase extends SparkTestBase {
   }
 
   private DeleteFile writePosDeleteFile(Table table) {
+    return writePosDeleteFile(table, 0L);
+  }
+
+  private DeleteFile writePosDeleteFile(Table table, long pos) {
     DataFile dataFile =
         Iterables.getFirst(table.currentSnapshot().addedDataFiles(table.io()), null);
     PartitionSpec dataFileSpec = table.specs().get(dataFile.specId());
     StructLike dataFilePartition = dataFile.partition();
 
     PositionDelete<InternalRow> delete = PositionDelete.create();
-    delete.set(dataFile.path(), 0L, null);
+    delete.set(dataFile.path(), pos, null);
 
     return writePositionDeletes(table, dataFileSpec, dataFilePartition, ImmutableList.of(delete));
   }
 
-  private DeleteFile writeEqDeleteFile(Table table) {
+  private DeleteFile writeEqDeleteFile(Table table, String dataValue) {
     List<Record> deletes = Lists.newArrayList();
-    Schema deleteRowSchema = SCHEMA.select("id");
+    Schema deleteRowSchema = SCHEMA.select("data");
     Record delete = GenericRecord.create(deleteRowSchema);
-    deletes.add(delete.copy("id", 1));
+    deletes.add(delete.copy("data", dataValue));
     try {
       return FileHelpers.writeDeleteFile(
           table,

@@ -51,6 +51,7 @@ public class OrcSplit extends FileSplit implements ColumnarSplit, LlapAwareSplit
   private static final Logger LOG = LoggerFactory.getLogger(OrcSplit.class);
   private OrcTail orcTail;
   private boolean hasFooter;
+
   /** This means {@link AcidUtils.AcidBaseFileType#ORIGINAL_BASE} */
   private boolean isOriginal;
 
@@ -238,7 +239,7 @@ public class OrcSplit extends FileSplit implements ColumnarSplit, LlapAwareSplit
    * @return true if is ACID
    */
   public boolean isAcid() {
-    return hasBase || deltas.size() > 0;
+    return hasBase || !deltas.isEmpty();
   }
 
   public long getProjectedColumnsUncompressedSize() {

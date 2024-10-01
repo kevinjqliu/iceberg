@@ -20,12 +20,10 @@ package org.apache.iceberg;
 
 import static org.apache.iceberg.TableProperties.MANIFEST_TARGET_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.MANIFEST_TARGET_SIZE_BYTES_DEFAULT;
-import static org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED;
-import static org.apache.iceberg.TableProperties.SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -34,10 +32,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import org.apache.iceberg.encryption.EncryptedOutputFile;
 import org.apache.iceberg.exceptions.RuntimeIOException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.io.InputFile;
-import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
@@ -57,7 +55,6 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
   private final TableOperations ops;
   private final Map<Integer, PartitionSpec> specsById;
   private final long manifestTargetSizeBytes;
-  private final boolean snapshotIdInheritanceEnabled;
 
   private final Set<ManifestFile> deletedManifests = Sets.newHashSet();
   private final List<ManifestFile> addedManifests = Lists.newArrayList();
@@ -82,10 +79,6 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
     this.manifestTargetSizeBytes =
         ops.current()
             .propertyAsLong(MANIFEST_TARGET_SIZE_BYTES, MANIFEST_TARGET_SIZE_BYTES_DEFAULT);
-    this.snapshotIdInheritanceEnabled =
-        ops.current()
-            .propertyAsBoolean(
-                SNAPSHOT_ID_INHERITANCE_ENABLED, SNAPSHOT_ID_INHERITANCE_ENABLED_DEFAULT);
   }
 
   @Override
@@ -148,7 +141,7 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
     Preconditions.checkArgument(
         manifest.sequenceNumber() == -1, "Sequence must be assigned during commit");
 
-    if (snapshotIdInheritanceEnabled && manifest.snapshotId() == null) {
+    if (canInheritSnapshotId() && manifest.snapshotId() == null) {
       addedManifests.add(manifest);
     } else {
       // the manifest must be rewritten with this update's snapshot ID
@@ -161,8 +154,8 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
 
   private ManifestFile copyManifest(ManifestFile manifest) {
     TableMetadata current = ops.current();
-    InputFile toCopy = ops.io().newInputFile(manifest.path());
-    OutputFile newFile = newManifestOutput();
+    InputFile toCopy = ops.io().newInputFile(manifest);
+    EncryptedOutputFile newFile = newManifestOutputFile();
     return ManifestFiles.copyRewriteManifest(
         current.formatVersion(),
         manifest.partitionSpecId(),
@@ -175,10 +168,10 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
 
   @Override
   public List<ManifestFile> apply(TableMetadata base, Snapshot snapshot) {
-    List<ManifestFile> currentManifests = base.currentSnapshot().dataManifests(ops.io());
+    List<ManifestFile> currentManifests = base.currentSnapshot().allManifests(ops.io());
     Set<ManifestFile> currentManifestSet = ImmutableSet.copyOf(currentManifests);
 
-    validateDeletedManifests(currentManifestSet);
+    validateDeletedManifests(currentManifestSet, base.currentSnapshot().snapshotId());
 
     if (requiresRewrite(currentManifestSet)) {
       performRewrite(currentManifests);
@@ -197,7 +190,6 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
     List<ManifestFile> apply = Lists.newArrayList();
     Iterables.addAll(apply, newManifestsWithMetadata);
     apply.addAll(keptManifests);
-    apply.addAll(base.currentSnapshot().deleteManifests(ops.io()));
 
     return apply;
   }
@@ -208,7 +200,7 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
       return false;
     }
 
-    if (rewrittenManifests.size() == 0) {
+    if (rewrittenManifests.isEmpty()) {
       // nothing yet processed so perform a full rewrite
       return true;
     }
@@ -249,13 +241,13 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
           .executeWith(workerPool())
           .run(
               manifest -> {
-                if (predicate != null && !predicate.test(manifest)) {
+                if (containsDeletes(manifest) || !matchesPredicate(manifest)) {
                   keptManifests.add(manifest);
                 } else {
                   rewrittenManifests.add(manifest);
                   try (ManifestReader<DataFile> reader =
                       ManifestFiles.read(manifest, ops.io(), ops.current().specsById())
-                          .select(Arrays.asList("*"))) {
+                          .select(Collections.singletonList("*"))) {
                     reader
                         .liveEntries()
                         .forEach(
@@ -275,14 +267,25 @@ public class BaseRewriteManifests extends SnapshotProducer<RewriteManifests>
     }
   }
 
-  private void validateDeletedManifests(Set<ManifestFile> currentManifests) {
+  private boolean containsDeletes(ManifestFile manifest) {
+    return manifest.content() == ManifestContent.DELETES;
+  }
+
+  private boolean matchesPredicate(ManifestFile manifest) {
+    return predicate == null || predicate.test(manifest);
+  }
+
+  private void validateDeletedManifests(
+      Set<ManifestFile> currentManifests, long currentSnapshotID) {
     // directly deleted manifests must be still present in the current snapshot
     deletedManifests.stream()
         .filter(manifest -> !currentManifests.contains(manifest))
         .findAny()
         .ifPresent(
             manifest -> {
-              throw new ValidationException("Manifest is missing: %s", manifest.path());
+              throw new ValidationException(
+                  "Deleted manifest %s could not be found in the latest snapshot %d",
+                  manifest.path(), currentSnapshotID);
             });
   }
 

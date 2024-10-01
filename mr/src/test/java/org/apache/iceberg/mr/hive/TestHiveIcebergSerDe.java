@@ -19,9 +19,11 @@
 package org.apache.iceberg.mr.hive;
 
 import static org.apache.iceberg.types.Types.NestedField.required;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Properties;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hive.serde2.SerDeException;
@@ -34,22 +36,20 @@ import org.apache.iceberg.mr.InputFormatConfig;
 import org.apache.iceberg.mr.hive.serde.objectinspector.IcebergObjectInspector;
 import org.apache.iceberg.mr.mapred.Container;
 import org.apache.iceberg.types.Types;
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class TestHiveIcebergSerDe {
 
-  private static final Schema schema =
+  private static final Schema SCHEMA =
       new Schema(required(1, "string_field", Types.StringType.get()));
 
-  @Rule public TemporaryFolder tmp = new TemporaryFolder();
+  @TempDir private Path tmp;
 
   @Test
   public void testInitialize() throws IOException, SerDeException {
-    File location = tmp.newFolder();
-    Assert.assertTrue(location.delete());
+    File location = tmp.toFile();
+    assertThat(location.delete()).isTrue();
 
     Configuration conf = new Configuration();
 
@@ -58,22 +58,22 @@ public class TestHiveIcebergSerDe {
     properties.setProperty(InputFormatConfig.CATALOG_NAME, Catalogs.ICEBERG_HADOOP_TABLE_NAME);
 
     HadoopTables tables = new HadoopTables(conf);
-    tables.create(schema, location.toString());
+    tables.create(SCHEMA, location.toString());
 
     HiveIcebergSerDe serDe = new HiveIcebergSerDe();
     serDe.initialize(conf, properties);
 
-    Assert.assertEquals(IcebergObjectInspector.create(schema), serDe.getObjectInspector());
+    assertThat(serDe.getObjectInspector()).isEqualTo(IcebergObjectInspector.create(SCHEMA));
   }
 
   @Test
   public void testDeserialize() {
     HiveIcebergSerDe serDe = new HiveIcebergSerDe();
 
-    Record record = RandomGenericData.generate(schema, 1, 0).get(0);
+    Record record = RandomGenericData.generate(SCHEMA, 1, 0).get(0);
     Container<Record> container = new Container<>();
     container.set(record);
 
-    Assert.assertEquals(record, serDe.deserialize(container));
+    assertThat(serDe.deserialize(container)).isEqualTo(record);
   }
 }

@@ -18,18 +18,20 @@
  */
 package org.apache.iceberg.dell.mock.ecs;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.emc.object.Range;
 import com.emc.object.s3.S3Exception;
 import com.emc.object.s3.request.PutObjectRequest;
-import org.assertj.core.api.Assertions;
 import org.assertj.core.api.InstanceOfAssertFactories;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 /** Verify the error codes between real client and mock client. */
 public class TestExceptionCode {
 
-  @Rule public EcsS3MockRule rule = EcsS3MockRule.create();
+  @RegisterExtension public EcsS3MockRule rule = EcsS3MockRule.create();
 
   @Test
   public void testExceptionCode() {
@@ -67,17 +69,11 @@ public class TestExceptionCode {
   }
 
   public void assertS3Exception(String message, int httpCode, String errorCode, Runnable task) {
-    Assertions.assertThatThrownBy(task::run)
+    assertThatThrownBy(task::run)
         .isInstanceOf(S3Exception.class)
         .asInstanceOf(InstanceOfAssertFactories.type(S3Exception.class))
         .satisfies(
-            e ->
-                Assertions.assertThat(e.getErrorCode())
-                    .as(message + ", http code")
-                    .isEqualTo(errorCode),
-            e ->
-                Assertions.assertThat(e.getHttpCode())
-                    .as(message + ", error code")
-                    .isEqualTo(httpCode));
+            e -> assertThat(e.getErrorCode()).as(message + ", http code").isEqualTo(errorCode),
+            e -> assertThat(e.getHttpCode()).as(message + ", error code").isEqualTo(httpCode));
   }
 }

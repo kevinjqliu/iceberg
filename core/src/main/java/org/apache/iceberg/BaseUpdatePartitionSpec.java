@@ -59,11 +59,13 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
   private final Map<String, String> renames = Maps.newHashMap();
 
   private boolean caseSensitive;
+  private boolean setAsDefault;
   private int lastAssignedPartitionId;
 
   BaseUpdatePartitionSpec(TableOperations ops) {
     this.ops = ops;
     this.caseSensitive = true;
+    this.setAsDefault = true;
     this.base = ops.current();
     this.formatVersion = base.formatVersion();
     this.spec = base.spec();
@@ -95,6 +97,7 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
     this.base = null;
     this.formatVersion = formatVersion;
     this.caseSensitive = true;
+    this.setAsDefault = true;
     this.spec = spec;
     this.schema = spec.schema();
     this.nameToField = indexSpecByName(spec);
@@ -118,7 +121,7 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
    */
   private PartitionField recycleOrCreatePartitionField(
       Pair<Integer, Transform<?, ?>> sourceTransform, String name) {
-    if (formatVersion == 2 && base != null) {
+    if (formatVersion >= 2 && base != null) {
       int sourceId = sourceTransform.first();
       Transform<?, ?> transform = sourceTransform.second();
 
@@ -147,6 +150,12 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
   }
 
   @Override
+  public UpdatePartitionSpec addNonDefaultSpec() {
+    this.setAsDefault = false;
+    return this;
+  }
+
+  @Override
   public BaseUpdatePartitionSpec addField(String sourceName) {
     return addField(Expressions.ref(sourceName));
   }
@@ -156,8 +165,7 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
     return addField(null, term);
   }
 
-  private BaseUpdatePartitionSpec rewriteDeleteAndAddField(
-      PartitionField existing, String name, Pair<Integer, Transform<?, ?>> sourceTransform) {
+  private BaseUpdatePartitionSpec rewriteDeleteAndAddField(PartitionField existing, String name) {
     deletes.remove(existing.fieldId());
     if (name == null || existing.name().equals(name)) {
       return this;
@@ -180,7 +188,7 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
     if (existing != null
         && deletes.contains(existing.fieldId())
         && existing.transform().equals(sourceTransform.second())) {
-      return rewriteDeleteAndAddField(existing, name, sourceTransform);
+      return rewriteDeleteAndAddField(existing, name);
     }
 
     Preconditions.checkArgument(
@@ -328,7 +336,12 @@ class BaseUpdatePartitionSpec implements UpdatePartitionSpec {
 
   @Override
   public void commit() {
-    TableMetadata update = base.updatePartitionSpec(apply());
+    TableMetadata update;
+    if (setAsDefault) {
+      update = base.updatePartitionSpec(apply());
+    } else {
+      update = base.addPartitionSpec(apply());
+    }
     ops.commit(base, update);
   }
 

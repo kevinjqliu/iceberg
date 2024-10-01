@@ -21,7 +21,6 @@ package org.apache.iceberg;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 import org.apache.hadoop.fs.Path;
 import org.apache.iceberg.TableMetadata.MetadataLogEntry;
 import org.apache.iceberg.hadoop.Util;
@@ -72,7 +71,7 @@ public class ReachableFileUtil {
   private static void metadataFileLocations(
       TableMetadata metadata, Set<String> metadataFileLocations, FileIO io, boolean recursive) {
     List<MetadataLogEntry> metadataLogEntries = metadata.previousFiles();
-    if (metadataLogEntries.size() > 0) {
+    if (!metadataLogEntries.isEmpty()) {
       for (MetadataLogEntry metadataLogEntry : metadataLogEntries) {
         metadataFileLocations.add(metadataLogEntry.file());
       }
@@ -133,27 +132,47 @@ public class ReachableFileUtil {
   }
 
   /**
-   * Returns locations of statistics files in a table.
+   * Returns locations of all statistics files in a table.
    *
    * @param table table for which statistics files needs to be listed
    * @return the location of statistics files
    */
   public static List<String> statisticsFilesLocations(Table table) {
-    return statisticsFilesLocations(table, statisticsFile -> true);
+    return statisticsFilesLocationsForSnapshots(table, null);
   }
 
   /**
-   * Returns locations of statistics files for a table matching the given predicate .
+   * Returns locations of all statistics files for a table matching the given snapshot IDs.
    *
    * @param table table for which statistics files needs to be listed
-   * @param predicate predicate for filtering the statistics files
+   * @param snapshotIds ids of snapshots for which statistics files will be returned. If null,
+   *     statistics files for all the snapshots will be returned.
    * @return the location of statistics files
    */
-  public static List<String> statisticsFilesLocations(
-      Table table, Predicate<StatisticsFile> predicate) {
-    return table.statisticsFiles().stream()
-        .filter(predicate)
+  public static List<String> statisticsFilesLocationsForSnapshots(
+      Table table, Set<Long> snapshotIds) {
+    List<String> statsFileLocations = Lists.newArrayList();
+
+    Predicate<StatisticsFile> statsFilePredicate;
+    Predicate<PartitionStatisticsFile> partitionStatsFilePredicate;
+    if (snapshotIds == null) {
+      statsFilePredicate = file -> true;
+      partitionStatsFilePredicate = file -> true;
+    } else {
+      statsFilePredicate = file -> snapshotIds.contains(file.snapshotId());
+      partitionStatsFilePredicate = file -> snapshotIds.contains(file.snapshotId());
+    }
+
+    table.statisticsFiles().stream()
+        .filter(statsFilePredicate)
         .map(StatisticsFile::path)
-        .collect(Collectors.toList());
+        .forEach(statsFileLocations::add);
+
+    table.partitionStatisticsFiles().stream()
+        .filter(partitionStatsFilePredicate)
+        .map(PartitionStatisticsFile::path)
+        .forEach(statsFileLocations::add);
+
+    return statsFileLocations;
   }
 }

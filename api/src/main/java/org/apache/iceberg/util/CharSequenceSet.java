@@ -21,7 +21,6 @@ package org.apache.iceberg.util;
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
@@ -31,7 +30,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.relocated.com.google.common.collect.Streams;
 
 public class CharSequenceSet implements Set<CharSequence>, Serializable {
-  private static final ThreadLocal<CharSequenceWrapper> wrappers =
+  private static final ThreadLocal<CharSequenceWrapper> WRAPPERS =
       ThreadLocal.withInitial(() -> CharSequenceWrapper.wrap(null));
 
   public static CharSequenceSet of(Iterable<CharSequence> charSequences) {
@@ -62,7 +61,7 @@ public class CharSequenceSet implements Set<CharSequence>, Serializable {
   @Override
   public boolean contains(Object obj) {
     if (obj instanceof CharSequence) {
-      CharSequenceWrapper wrapper = wrappers.get();
+      CharSequenceWrapper wrapper = WRAPPERS.get();
       boolean result = wrapperSet.contains(wrapper.set((CharSequence) obj));
       wrapper.set(null); // don't hold a reference to the value
       return result;
@@ -110,7 +109,7 @@ public class CharSequenceSet implements Set<CharSequence>, Serializable {
   @Override
   public boolean remove(Object obj) {
     if (obj instanceof CharSequence) {
-      CharSequenceWrapper wrapper = wrappers.get();
+      CharSequenceWrapper wrapper = WRAPPERS.get();
       boolean result = wrapperSet.remove(wrapper.set((CharSequence) obj));
       wrapper.set(null); // don't hold a reference to the value
       return result;
@@ -167,23 +166,31 @@ public class CharSequenceSet implements Set<CharSequence>, Serializable {
     wrapperSet.clear();
   }
 
+  @SuppressWarnings("CollectionUndefinedEquality")
   @Override
-  public boolean equals(Object o) {
-    if (this == o) {
+  public boolean equals(Object other) {
+    if (this == other) {
       return true;
-    }
-
-    if (o == null || getClass() != o.getClass()) {
+    } else if (!(other instanceof Set)) {
       return false;
     }
 
-    CharSequenceSet that = (CharSequenceSet) o;
-    return wrapperSet.equals(that.wrapperSet);
+    Set<?> that = (Set<?>) other;
+
+    if (size() != that.size()) {
+      return false;
+    }
+
+    try {
+      return containsAll(that);
+    } catch (ClassCastException | NullPointerException unused) {
+      return false;
+    }
   }
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(wrapperSet);
+    return wrapperSet.stream().mapToInt(CharSequenceWrapper::hashCode).sum();
   }
 
   @Override

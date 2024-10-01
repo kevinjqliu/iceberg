@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.gcp.gcs;
 
-import com.google.api.client.util.Lists;
 import com.google.cloud.ReadChannel;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Storage;
@@ -38,6 +37,7 @@ import org.apache.iceberg.metrics.MetricsContext;
 import org.apache.iceberg.metrics.MetricsContext.Unit;
 import org.apache.iceberg.relocated.com.google.common.base.Joiner;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -186,7 +186,7 @@ class GCSInputStream extends SeekableInputStream implements RangeReadable {
     }
   }
 
-  @SuppressWarnings("checkstyle:NoFinalizer")
+  @SuppressWarnings({"checkstyle:NoFinalizer", "Finalize"})
   @Override
   protected void finalize() throws Throwable {
     super.finalize();

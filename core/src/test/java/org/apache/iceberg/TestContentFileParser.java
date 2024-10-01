@@ -18,6 +18,9 @@
  */
 package org.apache.iceberg;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -28,7 +31,6 @@ import org.apache.iceberg.types.Comparators;
 import org.apache.iceberg.types.Conversions;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.JsonUtil;
-import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -37,26 +39,25 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class TestContentFileParser {
   @Test
   public void testNullArguments() throws Exception {
-    Assertions.assertThatThrownBy(() -> ContentFileParser.toJson(null, TableTestBase.SPEC))
+    assertThatThrownBy(() -> ContentFileParser.toJson(null, TestBase.SPEC))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid content file: null");
 
-    Assertions.assertThatThrownBy(() -> ContentFileParser.toJson(TableTestBase.FILE_A, null))
+    assertThatThrownBy(() -> ContentFileParser.toJson(TestBase.FILE_A, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid partition spec: null");
 
-    Assertions.assertThatThrownBy(
-            () -> ContentFileParser.toJson(TableTestBase.FILE_A, TableTestBase.SPEC, null))
+    assertThatThrownBy(() -> ContentFileParser.toJson(TestBase.FILE_A, TestBase.SPEC, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid JSON generator: null");
 
-    Assertions.assertThatThrownBy(() -> ContentFileParser.fromJson(null, TableTestBase.SPEC))
+    assertThatThrownBy(() -> ContentFileParser.fromJson(null, TestBase.SPEC))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid JSON node for content file: null");
 
-    String jsonStr = ContentFileParser.toJson(TableTestBase.FILE_A, TableTestBase.SPEC);
+    String jsonStr = ContentFileParser.toJson(TestBase.FILE_A, TestBase.SPEC);
     JsonNode jsonNode = JsonUtil.mapper().readTree(jsonStr);
-    Assertions.assertThatThrownBy(() -> ContentFileParser.fromJson(jsonNode, null))
+    assertThatThrownBy(() -> ContentFileParser.fromJson(jsonNode, null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid partition spec: null");
   }
@@ -66,10 +67,10 @@ public class TestContentFileParser {
   public void testDataFile(PartitionSpec spec, DataFile dataFile, String expectedJson)
       throws Exception {
     String jsonStr = ContentFileParser.toJson(dataFile, spec);
-    Assertions.assertThat(jsonStr).isEqualTo(expectedJson);
+    assertThat(jsonStr).isEqualTo(expectedJson);
     JsonNode jsonNode = JsonUtil.mapper().readTree(jsonStr);
     ContentFile<?> deserializedContentFile = ContentFileParser.fromJson(jsonNode, spec);
-    Assertions.assertThat(deserializedContentFile).isInstanceOf(DataFile.class);
+    assertThat(deserializedContentFile).isInstanceOf(DataFile.class);
     assertContentFileEquals(dataFile, deserializedContentFile, spec);
   }
 
@@ -78,10 +79,10 @@ public class TestContentFileParser {
   public void testDeleteFile(PartitionSpec spec, DeleteFile deleteFile, String expectedJson)
       throws Exception {
     String jsonStr = ContentFileParser.toJson(deleteFile, spec);
-    Assertions.assertThat(jsonStr).isEqualTo(expectedJson);
+    assertThat(jsonStr).isEqualTo(expectedJson);
     JsonNode jsonNode = JsonUtil.mapper().readTree(jsonStr);
     ContentFile<?> deserializedContentFile = ContentFileParser.fromJson(jsonNode, spec);
-    Assertions.assertThat(deserializedContentFile).isInstanceOf(DeleteFile.class);
+    assertThat(deserializedContentFile).isInstanceOf(DeleteFile.class);
     assertContentFileEquals(deleteFile, deserializedContentFile, spec);
   }
 
@@ -96,13 +97,13 @@ public class TestContentFileParser {
             dataFileWithAllOptional(PartitionSpec.unpartitioned()),
             dataFileJsonWithAllOptional(PartitionSpec.unpartitioned())),
         Arguments.of(
-            TableTestBase.SPEC,
-            dataFileWithRequiredOnly(TableTestBase.SPEC),
-            dataFileJsonWithRequiredOnly(TableTestBase.SPEC)),
+            TestBase.SPEC,
+            dataFileWithRequiredOnly(TestBase.SPEC),
+            dataFileJsonWithRequiredOnly(TestBase.SPEC)),
         Arguments.of(
-            TableTestBase.SPEC,
-            dataFileWithAllOptional(TableTestBase.SPEC),
-            dataFileJsonWithAllOptional(TableTestBase.SPEC)));
+            TestBase.SPEC,
+            dataFileWithAllOptional(TestBase.SPEC),
+            dataFileJsonWithAllOptional(TestBase.SPEC)));
   }
 
   private static DataFile dataFileWithRequiredOnly(PartitionSpec spec) {
@@ -141,7 +142,7 @@ public class TestContentFileParser {
           + "\"lower-bounds\":{\"keys\":[3,4],\"values\":[\"01000000\",\"02000000\"]},"
           + "\"upper-bounds\":{\"keys\":[3,4],\"values\":[\"05000000\",\"0A000000\"]},"
           + "\"key-metadata\":\"00000000000000000000000000000000\","
-          + "\"split-offsets\":[128,256],\"equality-ids\":[1],\"sort-order-id\":1}";
+          + "\"split-offsets\":[128,256],\"sort-order-id\":1}";
     } else {
       return "{\"spec-id\":0,\"content\":\"DATA\",\"file-path\":\"/path/to/data-with-stats.parquet\","
           + "\"file-format\":\"PARQUET\",\"partition\":{\"1000\":1},\"file-size-in-bytes\":350,\"record-count\":10,"
@@ -152,7 +153,7 @@ public class TestContentFileParser {
           + "\"lower-bounds\":{\"keys\":[3,4],\"values\":[\"01000000\",\"02000000\"]},"
           + "\"upper-bounds\":{\"keys\":[3,4],\"values\":[\"05000000\",\"0A000000\"]},"
           + "\"key-metadata\":\"00000000000000000000000000000000\","
-          + "\"split-offsets\":[128,256],\"equality-ids\":[1],\"sort-order-id\":1}";
+          + "\"split-offsets\":[128,256],\"sort-order-id\":1}";
     }
   }
 
@@ -180,10 +181,9 @@ public class TestContentFileParser {
                     ))
             .withFileSizeInBytes(350)
             .withSplitOffsets(Arrays.asList(128L, 256L))
-            .withEqualityFieldIds(Collections.singletonList(1))
             .withEncryptionKeyMetadata(ByteBuffer.wrap(new byte[16]))
             .withSortOrder(
-                SortOrder.builderFor(TableTestBase.SCHEMA)
+                SortOrder.builderFor(TestBase.SCHEMA)
                     .withOrderId(1)
                     .sortBy("id", SortDirection.ASC, NullOrder.NULLS_FIRST)
                     .build());
@@ -207,13 +207,13 @@ public class TestContentFileParser {
             deleteFileWithAllOptional(PartitionSpec.unpartitioned()),
             deleteFileJsonWithAllOptional(PartitionSpec.unpartitioned())),
         Arguments.of(
-            TableTestBase.SPEC,
-            deleteFileWithRequiredOnly(TableTestBase.SPEC),
-            deleteFileJsonWithRequiredOnly(TableTestBase.SPEC)),
+            TestBase.SPEC,
+            deleteFileWithRequiredOnly(TestBase.SPEC),
+            deleteFileJsonWithRequiredOnly(TestBase.SPEC)),
         Arguments.of(
-            TableTestBase.SPEC,
-            deleteFileWithAllOptional(TableTestBase.SPEC),
-            deleteFileJsonWithAllOptional(TableTestBase.SPEC)));
+            TestBase.SPEC,
+            deleteFileWithAllOptional(TestBase.SPEC),
+            deleteFileJsonWithAllOptional(TestBase.SPEC)));
   }
 
   private static DeleteFile deleteFileWithRequiredOnly(PartitionSpec spec) {
@@ -272,7 +272,7 @@ public class TestContentFileParser {
         metrics,
         new int[] {3},
         1,
-        Arrays.asList(128L),
+        Collections.singletonList(128L),
         ByteBuffer.wrap(new byte[16]));
   }
 
@@ -314,25 +314,25 @@ public class TestContentFileParser {
 
   static void assertContentFileEquals(
       ContentFile<?> expected, ContentFile<?> actual, PartitionSpec spec) {
-    Assertions.assertThat(actual.getClass()).isEqualTo(expected.getClass());
-    Assertions.assertThat(actual.specId()).isEqualTo(expected.specId());
-    Assertions.assertThat(actual.content()).isEqualTo(expected.content());
-    Assertions.assertThat(actual.path()).isEqualTo(expected.path());
-    Assertions.assertThat(actual.format()).isEqualTo(expected.format());
-    Assertions.assertThat(actual.partition())
+    assertThat(actual.getClass()).isEqualTo(expected.getClass());
+    assertThat(actual.specId()).isEqualTo(expected.specId());
+    assertThat(actual.content()).isEqualTo(expected.content());
+    assertThat(actual.path()).isEqualTo(expected.path());
+    assertThat(actual.format()).isEqualTo(expected.format());
+    assertThat(actual.partition())
         .usingComparator(Comparators.forType(spec.partitionType()))
         .isEqualTo(expected.partition());
-    Assertions.assertThat(actual.recordCount()).isEqualTo(expected.recordCount());
-    Assertions.assertThat(actual.fileSizeInBytes()).isEqualTo(expected.fileSizeInBytes());
-    Assertions.assertThat(actual.columnSizes()).isEqualTo(expected.columnSizes());
-    Assertions.assertThat(actual.valueCounts()).isEqualTo(expected.valueCounts());
-    Assertions.assertThat(actual.nullValueCounts()).isEqualTo(expected.nullValueCounts());
-    Assertions.assertThat(actual.nanValueCounts()).isEqualTo(expected.nanValueCounts());
-    Assertions.assertThat(actual.lowerBounds()).isEqualTo(expected.lowerBounds());
-    Assertions.assertThat(actual.upperBounds()).isEqualTo(expected.upperBounds());
-    Assertions.assertThat(actual.keyMetadata()).isEqualTo(expected.keyMetadata());
-    Assertions.assertThat(actual.splitOffsets()).isEqualTo(expected.splitOffsets());
-    Assertions.assertThat(actual.equalityFieldIds()).isEqualTo(expected.equalityFieldIds());
-    Assertions.assertThat(actual.sortOrderId()).isEqualTo(expected.sortOrderId());
+    assertThat(actual.recordCount()).isEqualTo(expected.recordCount());
+    assertThat(actual.fileSizeInBytes()).isEqualTo(expected.fileSizeInBytes());
+    assertThat(actual.columnSizes()).isEqualTo(expected.columnSizes());
+    assertThat(actual.valueCounts()).isEqualTo(expected.valueCounts());
+    assertThat(actual.nullValueCounts()).isEqualTo(expected.nullValueCounts());
+    assertThat(actual.nanValueCounts()).isEqualTo(expected.nanValueCounts());
+    assertThat(actual.lowerBounds()).isEqualTo(expected.lowerBounds());
+    assertThat(actual.upperBounds()).isEqualTo(expected.upperBounds());
+    assertThat(actual.keyMetadata()).isEqualTo(expected.keyMetadata());
+    assertThat(actual.splitOffsets()).isEqualTo(expected.splitOffsets());
+    assertThat(actual.equalityFieldIds()).isEqualTo(expected.equalityFieldIds());
+    assertThat(actual.sortOrderId()).isEqualTo(expected.sortOrderId());
   }
 }

@@ -43,7 +43,7 @@ public class RewritePositionDeletesGroup {
   private Set<DeleteFile> addedDeleteFiles = Collections.emptySet();
 
   public RewritePositionDeletesGroup(FileGroupInfo info, List<PositionDeletesScanTask> tasks) {
-    Preconditions.checkArgument(tasks.size() > 0, "Tasks must not be empty");
+    Preconditions.checkArgument(!tasks.isEmpty(), "Tasks must not be empty");
     this.info = info;
     this.tasks = tasks;
     this.maxRewrittenDataSequenceNumber =
@@ -127,7 +127,7 @@ public class RewritePositionDeletesGroup {
         return Comparator.comparing(
             RewritePositionDeletesGroup::numRewrittenDeleteFiles, Comparator.reverseOrder());
       default:
-        return (fileGroupOne, fileGroupTwo) -> 0;
+        return (unused, unused2) -> 0;
     }
   }
 }
