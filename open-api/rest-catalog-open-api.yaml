@@ -1159,6 +1159,44 @@ paths:
         5XX:
           $ref: '#/components/responses/ServerErrorResponse'
 
+  /v1/{prefix}/namespaces/{namespace}/tables/{table}/credentials:
+    parameters:
+      - $ref: '#/components/parameters/prefix'
+      - $ref: '#/components/parameters/namespace'
+      - $ref: '#/components/parameters/table'
+
+    get:
+      tags:
+        - Catalog API
+      summary: Load vended credentials for a table from the catalog
+      operationId: loadCredentials
+      description: Load vended credentials for a table from the catalog.
+      responses:
+        200:
+          $ref: '#/components/responses/LoadCredentialsResponse'
+        400:
+          $ref: '#/components/responses/BadRequestErrorResponse'
+        401:
+          $ref: '#/components/responses/UnauthorizedResponse'
+        403:
+          $ref: '#/components/responses/ForbiddenResponse'
+        404:
+          description:
+            Not Found - NoSuchTableException, table to load credentials for does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IcebergErrorResponse'
+              examples:
+                TableToLoadDoesNotExist:
+                  $ref: '#/components/examples/NoSuchTableError'
+        419:
+          $ref: '#/components/responses/AuthenticationTimeoutResponse'
+        503:
+          $ref: '#/components/responses/ServiceUnavailableResponse'
+        5XX:
+          $ref: '#/components/responses/ServerErrorResponse'
+
   /v1/{prefix}/tables/rename:
     parameters:
       - $ref: '#/components/parameters/prefix'
@@ -2654,7 +2692,13 @@ components:
           $ref: '#/components/schemas/Schema'
         last-column-id:
           type: integer
-          description: The highest assigned column ID for the table. This is used to ensure columns are always assigned an unused ID when evolving schemas. When omitted, it will be computed on the server side.
+          deprecated: true
+          description:
+            This optional field is **DEPRECATED for REMOVAL** since it more safe to handle this internally,
+            and shouldn't be exposed to the clients.
+
+            The highest assigned column ID for the table. This is used to ensure columns are always
+            assigned an unused ID when evolving schemas. When omitted, it will be computed on the server side.
 
     SetCurrentSchemaUpdate:
       allOf:
@@ -3103,6 +3147,31 @@ components:
         uuid:
           type: string
 
+    StorageCredential:
+      type: object
+      required:
+        - prefix
+        - config
+      properties:
+        prefix:
+          type: string
+          description: Indicates a storage location prefix where the credential is relevant. Clients should choose the most
+            specific prefix (by selecting the longest prefix) if several credentials of the same type are available.
+        config:
+          type: object
+          additionalProperties:
+            type: string
+
+    LoadCredentialsResponse:
+      type: object
+      required:
+        - storage-credentials
+      properties:
+        storage-credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCredential'
+
     LoadTableResult:
       description: |
         Result used when a table is successfully loaded.
@@ -3125,10 +3194,15 @@ components:
         
         The following configurations should be respected when working with tables stored in AWS S3
          - `client.region`: region to configure client for making requests to AWS
-         - `s3.access-key-id`: id for for credentials that provide access to the data in S3
+         - `s3.access-key-id`: id for credentials that provide access to the data in S3
          - `s3.secret-access-key`: secret for credentials that provide access to data in S3 
          - `s3.session-token`: if present, this value should be used for as the session token 
          - `s3.remote-signing-enabled`: if `true` remote signing should be performed as described in the `s3-signer-open-api.yaml` specification
+
+        ## Storage Credentials
+
+        Credentials for ADLS / GCS / S3 / ... are provided through the `storage-credentials` field.
+        Clients must first check whether the respective credentials exist in the `storage-credentials` field before checking the `config` for credentials.
       type: object
       required:
         - metadata
@@ -3142,6 +3216,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        storage-credentials:
+          type: array
+          items:
+            $ref: '#/components/schemas/StorageCredential'
 
     ScanTasks:
       type: object
@@ -3394,7 +3472,6 @@ components:
         ## General Configurations
 
         - `token`: Authorization bearer token to use for view requests if OAuth2 security is enabled
-
       type: object
       required:
         - metadata-location
@@ -4061,6 +4138,7 @@ components:
         - avro
         - orc
         - parquet
+        - puffin
 
     ContentFile:
       discriminator:
@@ -4170,6 +4248,14 @@ components:
         content:
           type: string
           enum: [ "position-deletes" ]
+        content-offset:
+          type: integer
+          format: int64
+          description: Offset within the delete file of delete content
+        content-size-in-bytes:
+          type: integer
+          format: int64
+          description: Length, in bytes, of the delete content; required if content-offset is present
 
     EqualityDeleteFile:
       allOf:
@@ -4546,6 +4632,13 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/CommitTableResponse'
+
+    LoadCredentialsResponse:
+      description: Table credentials result when loading credentials for a table
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LoadCredentialsResponse'
 
   #######################################
   # Common examples of different values #

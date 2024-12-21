@@ -467,6 +467,20 @@ class AssertViewUUID(BaseModel):
     uuid: str
 
 
+class StorageCredential(BaseModel):
+    prefix: str = Field(
+        ...,
+        description='Indicates a storage location prefix where the credential is relevant. Clients should choose the most specific prefix (by selecting the longest prefix) if several credentials of the same type are available.',
+    )
+    config: Dict[str, str]
+
+
+class LoadCredentialsResponse(BaseModel):
+    storage_credentials: List[StorageCredential] = Field(
+        ..., alias='storage-credentials'
+    )
+
+
 class PlanStatus(BaseModel):
     __root__: Literal['completed', 'submitted', 'cancelled', 'failed'] = Field(
         ..., description='Status of a server-side planning operation'
@@ -816,7 +830,7 @@ class PrimitiveTypeValue(BaseModel):
 
 
 class FileFormat(BaseModel):
-    __root__: Literal['avro', 'orc', 'parquet']
+    __root__: Literal['avro', 'orc', 'parquet', 'puffin']
 
 
 class ContentFile(BaseModel):
@@ -846,6 +860,16 @@ class ContentFile(BaseModel):
 
 class PositionDeleteFile(ContentFile):
     content: Literal['position-deletes']
+    content_offset: Optional[int] = Field(
+        None,
+        alias='content-offset',
+        description='Offset within the delete file of delete content',
+    )
+    content_size_in_bytes: Optional[int] = Field(
+        None,
+        alias='content-size-in-bytes',
+        description='Length, in bytes, of the delete content; required if content-offset is present',
+    )
 
 
 class EqualityDeleteFile(ContentFile):
@@ -1128,7 +1152,7 @@ class AddSchemaUpdate(BaseUpdate):
     last_column_id: Optional[int] = Field(
         None,
         alias='last-column-id',
-        description='The highest assigned column ID for the table. This is used to ensure columns are always assigned an unused ID when evolving schemas. When omitted, it will be computed on the server side.',
+        description="This optional field is **DEPRECATED for REMOVAL** since it more safe to handle this internally, and shouldn't be exposed to the clients.\nThe highest assigned column ID for the table. This is used to ensure columns are always assigned an unused ID when evolving schemas. When omitted, it will be computed on the server side.",
     )
 
 
@@ -1190,10 +1214,15 @@ class LoadTableResult(BaseModel):
 
     The following configurations should be respected when working with tables stored in AWS S3
      - `client.region`: region to configure client for making requests to AWS
-     - `s3.access-key-id`: id for for credentials that provide access to the data in S3
+     - `s3.access-key-id`: id for credentials that provide access to the data in S3
      - `s3.secret-access-key`: secret for credentials that provide access to data in S3
      - `s3.session-token`: if present, this value should be used for as the session token
      - `s3.remote-signing-enabled`: if `true` remote signing should be performed as described in the `s3-signer-open-api.yaml` specification
+
+    ## Storage Credentials
+
+    Credentials for ADLS / GCS / S3 / ... are provided through the `storage-credentials` field.
+    Clients must first check whether the respective credentials exist in the `storage-credentials` field before checking the `config` for credentials.
 
     """
 
@@ -1204,6 +1233,9 @@ class LoadTableResult(BaseModel):
     )
     metadata: TableMetadata
     config: Optional[Dict[str, str]] = None
+    storage_credentials: Optional[List[StorageCredential]] = Field(
+        None, alias='storage-credentials'
+    )
 
 
 class ScanTasks(BaseModel):
