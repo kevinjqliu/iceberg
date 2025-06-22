@@ -94,12 +94,17 @@ public class TestSparkMetadataColumns extends TestBase {
       {FileFormat.PARQUET, true, 1},
       {FileFormat.PARQUET, false, 2},
       {FileFormat.PARQUET, true, 2},
+      {FileFormat.PARQUET, false, 3},
+      {FileFormat.PARQUET, true, 3},
       {FileFormat.AVRO, false, 1},
       {FileFormat.AVRO, false, 2},
+      {FileFormat.AVRO, false, 3},
       {FileFormat.ORC, false, 1},
       {FileFormat.ORC, true, 1},
       {FileFormat.ORC, false, 2},
       {FileFormat.ORC, true, 2},
+      {FileFormat.ORC, false, 3},
+      {FileFormat.ORC, true, 3},
     };
   }
 
@@ -309,6 +314,21 @@ public class TestSparkMetadataColumns extends TestBase {
         "Rows must match",
         ImmutableList.of(row(0, null, -1)),
         sql("SELECT _spec_id, _partition, _renamed_spec_id FROM %s", TABLE_NAME));
+  }
+
+  @TestTemplate
+  public void testRowLineageColumnsAreNullBeforeV3() {
+    assumeThat(formatVersion).isLessThan(3);
+    // ToDo: When the other readers have row lineage plumbed through, remove these assumptions
+    assumeThat(vectorized).isFalse();
+    assumeThat(fileFormat).isEqualTo(FileFormat.PARQUET);
+
+    sql("INSERT INTO TABLE %s VALUES (1L, 'a1', 'b1')", TABLE_NAME);
+
+    assertEquals(
+        "Rows must match",
+        ImmutableList.of(row(1L, null, null)),
+        sql("SELECT id, _row_id, _last_updated_sequence_number FROM %s", TABLE_NAME));
   }
 
   private void createAndInitTable() throws IOException {

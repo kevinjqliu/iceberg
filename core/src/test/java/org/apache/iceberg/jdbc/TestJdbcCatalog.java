@@ -103,13 +103,19 @@ public class TestJdbcCatalog extends CatalogTests<JdbcCatalog> {
   }
 
   @Override
-  protected boolean supportsNamespaceProperties() {
+  protected boolean supportsNestedNamespaces() {
     return true;
   }
 
   @Override
-  protected boolean supportsNestedNamespaces() {
+  protected boolean supportsEmptyNamespace() {
     return true;
+  }
+
+  @Override
+  protected boolean supportsNamesWithDot() {
+    // namespaces with a dot are not supported
+    return false;
   }
 
   protected List<String> metadataVersionFiles(String location) {
@@ -144,6 +150,15 @@ public class TestJdbcCatalog extends CatalogTests<JdbcCatalog> {
     properties.put(JdbcCatalog.PROPERTY_PREFIX + "password", "password");
     warehouseLocation = this.tableDir.toAbsolutePath().toString();
     properties.put(CatalogProperties.WAREHOUSE_LOCATION, warehouseLocation);
+    properties.put(CatalogProperties.TABLE_DEFAULT_PREFIX + "default-key1", "catalog-default-key1");
+    properties.put(CatalogProperties.TABLE_DEFAULT_PREFIX + "default-key2", "catalog-default-key2");
+    properties.put(
+        CatalogProperties.TABLE_DEFAULT_PREFIX + "override-key3", "catalog-default-key3");
+    properties.put(
+        CatalogProperties.TABLE_OVERRIDE_PREFIX + "override-key3", "catalog-override-key3");
+    properties.put(
+        CatalogProperties.TABLE_OVERRIDE_PREFIX + "override-key4", "catalog-override-key4");
+
     properties.put("type", "jdbc");
     properties.putAll(additionalProperties);
 
@@ -514,7 +529,7 @@ public class TestJdbcCatalog extends CatalogTests<JdbcCatalog> {
     String metaLocation = catalog.defaultWarehouseLocation(testTable);
 
     FileSystem fs = Util.getFs(new Path(metaLocation), conf);
-    assertThat(fs.isDirectory(new Path(metaLocation))).isTrue();
+    assertThat(fs.getFileStatus(new Path(metaLocation)).isDirectory()).isTrue();
 
     assertThatThrownBy(() -> catalog.createTable(testTable, SCHEMA, PartitionSpec.unpartitioned()))
         .isInstanceOf(AlreadyExistsException.class)
@@ -533,7 +548,7 @@ public class TestJdbcCatalog extends CatalogTests<JdbcCatalog> {
     String metaLocation = catalog.defaultWarehouseLocation(testTable);
 
     FileSystem fs = Util.getFs(new Path(metaLocation), conf);
-    assertThat(fs.isDirectory(new Path(metaLocation))).isTrue();
+    assertThat(fs.getFileStatus(new Path(metaLocation)).isDirectory()).isTrue();
 
     catalog.dropTable(testTable, true);
   }
@@ -763,11 +778,11 @@ public class TestJdbcCatalog extends CatalogTests<JdbcCatalog> {
 
     List<Namespace> nsp3 = catalog.listNamespaces();
     Set<String> tblSet2 = Sets.newHashSet(nsp3.stream().map(Namespace::toString).iterator());
-    assertThat(tblSet2).hasSize(5).contains("db", "db2", "d_", "d%", "");
+    assertThat(tblSet2).hasSize(4).contains("db", "db2", "d_", "d%");
 
     List<Namespace> nsp4 = catalog.listNamespaces();
     Set<String> tblSet3 = Sets.newHashSet(nsp4.stream().map(Namespace::toString).iterator());
-    assertThat(tblSet3).hasSize(5).contains("db", "db2", "d_", "d%", "");
+    assertThat(tblSet3).hasSize(4).contains("db", "db2", "d_", "d%");
 
     List<Namespace> nsp5 = catalog.listNamespaces(Namespace.of("d_"));
     assertThat(nsp5).hasSize(1);

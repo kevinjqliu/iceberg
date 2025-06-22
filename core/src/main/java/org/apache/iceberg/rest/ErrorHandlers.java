@@ -24,6 +24,7 @@ import org.apache.iceberg.exceptions.BadRequestException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.CommitStateUnknownException;
 import org.apache.iceberg.exceptions.ForbiddenException;
+import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.NoSuchViewException;
@@ -50,6 +51,10 @@ public class ErrorHandlers {
 
   public static Consumer<ErrorResponse> namespaceErrorHandler() {
     return NamespaceErrorHandler.INSTANCE;
+  }
+
+  public static Consumer<ErrorResponse> dropNamespaceErrorHandler() {
+    return DropNamespaceErrorHandler.INSTANCE;
   }
 
   public static Consumer<ErrorResponse> tableErrorHandler() {
@@ -86,7 +91,19 @@ public class ErrorHandlers {
         case 404:
           throw new NoSuchTableException("%s", error.message());
         case 409:
-          throw new CommitFailedException("Commit failed: %s", error.message());
+          if (error.wasRetried()) {
+            // If a retried request finally fails with 409,
+            // the IRC service may have persisted the commit
+            // despite initial 5xx errors, resulting in a self-conflict on retry
+            // due to the base changing.
+            // Mark this failure as commit state unknown rather than failed to prevent file cleanup.
+            throw new CommitStateUnknownException(
+                new RESTException(
+                    "Commit status unknown, due to retries: %s: %s",
+                    error.code(), error.message()));
+          } else {
+            throw new CommitFailedException("Commit failed: %s", error.message());
+          }
         case 500:
         case 502:
         case 504:
@@ -162,19 +179,38 @@ public class ErrorHandlers {
     }
   }
 
-  /** Request error handler specifically for CRUD ops on namespaces. */
+  /** Request error handler specifically for create-read-update ops on namespaces. */
   private static class NamespaceErrorHandler extends DefaultErrorHandler {
     private static final ErrorHandler INSTANCE = new NamespaceErrorHandler();
 
     @Override
     public void accept(ErrorResponse error) {
       switch (error.code()) {
+        case 400:
+          if (NamespaceNotEmptyException.class.getSimpleName().equals(error.type())) {
+            throw new NamespaceNotEmptyException("%s", error.message());
+          }
+          throw new BadRequestException("Malformed request: %s", error.message());
         case 404:
           throw new NoSuchNamespaceException("%s", error.message());
         case 409:
           throw new AlreadyExistsException("%s", error.message());
         case 422:
           throw new RESTException("Unable to process: %s", error.message());
+      }
+
+      super.accept(error);
+    }
+  }
+
+  /** Request error handler for drop namespace operations. */
+  private static class DropNamespaceErrorHandler extends NamespaceErrorHandler {
+    private static final ErrorHandler INSTANCE = new DropNamespaceErrorHandler();
+
+    @Override
+    public void accept(ErrorResponse error) {
+      if (error.code() == 409) {
+        throw new NamespaceNotEmptyException("%s", error.message());
       }
 
       super.accept(error);

@@ -22,8 +22,9 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
-import org.apache.iceberg.variants.Variants.Primitives;
+import org.apache.iceberg.util.UUIDUtil;
 
 class PrimitiveWrapper<T> implements VariantPrimitive<T> {
   private static final byte NULL_HEADER = VariantUtil.primitiveHeader(Primitives.TYPE_NULL);
@@ -46,18 +47,30 @@ class PrimitiveWrapper<T> implements VariantPrimitive<T> {
       VariantUtil.primitiveHeader(Primitives.TYPE_DECIMAL16);
   private static final byte BINARY_HEADER = VariantUtil.primitiveHeader(Primitives.TYPE_BINARY);
   private static final byte STRING_HEADER = VariantUtil.primitiveHeader(Primitives.TYPE_STRING);
+  private static final byte TIME_HEADER = VariantUtil.primitiveHeader(Primitives.TYPE_TIME);
+  private static final byte TIMESTAMPTZ_NANOS_HEADER =
+      VariantUtil.primitiveHeader(Primitives.TYPE_TIMESTAMPTZ_NANOS);
+  private static final byte TIMESTAMPNTZ_NANOS_HEADER =
+      VariantUtil.primitiveHeader(Primitives.TYPE_TIMESTAMPNTZ_NANOS);
+  private static final byte UUID_HEADER = VariantUtil.primitiveHeader(Primitives.TYPE_UUID);
 
-  private final Variants.PhysicalType type;
+  private final PhysicalType type;
   private final T value;
   private ByteBuffer buffer = null;
 
-  PrimitiveWrapper(Variants.PhysicalType type, T value) {
-    this.type = type;
+  PrimitiveWrapper(PhysicalType type, T value) {
+    if (value instanceof Boolean
+        && (type == PhysicalType.BOOLEAN_TRUE || type == PhysicalType.BOOLEAN_FALSE)) {
+      // set the boolean type from the value so that callers can use BOOLEAN_* interchangeably
+      this.type = ((Boolean) value) ? PhysicalType.BOOLEAN_TRUE : PhysicalType.BOOLEAN_FALSE;
+    } else {
+      this.type = type;
+    }
     this.value = value;
   }
 
   @Override
-  public Variants.PhysicalType type() {
+  public PhysicalType type() {
     return type;
   }
 
@@ -85,6 +98,9 @@ class PrimitiveWrapper<T> implements VariantPrimitive<T> {
       case DOUBLE:
       case TIMESTAMPTZ:
       case TIMESTAMPNTZ:
+      case TIMESTAMPTZ_NANOS:
+      case TIMESTAMPNTZ_NANOS:
+      case TIME:
         return 9; // 1 header + 8 value
       case DECIMAL4:
         return 6; // 1 header + 1 scale + 4 unscaled value
@@ -100,6 +116,8 @@ class PrimitiveWrapper<T> implements VariantPrimitive<T> {
         }
 
         return 5 + buffer.remaining(); // 1 header + 4 length + value length
+      case UUID:
+        return 1 + 16; // 1 header + 16 length
     }
 
     throw new UnsupportedOperationException("Unsupported primitive type: " + type());
@@ -199,8 +217,40 @@ class PrimitiveWrapper<T> implements VariantPrimitive<T> {
         outBuffer.putInt(offset + 1, buffer.remaining());
         VariantUtil.writeBufferAbsolute(outBuffer, offset + 5, buffer);
         return 5 + buffer.remaining();
+      case TIME:
+        outBuffer.put(offset, TIME_HEADER);
+        outBuffer.putLong(offset + 1, (Long) value);
+        return 9;
+      case TIMESTAMPTZ_NANOS:
+        outBuffer.put(offset, TIMESTAMPTZ_NANOS_HEADER);
+        outBuffer.putLong(offset + 1, (Long) value);
+        return 9;
+      case TIMESTAMPNTZ_NANOS:
+        outBuffer.put(offset, TIMESTAMPNTZ_NANOS_HEADER);
+        outBuffer.putLong(offset + 1, (Long) value);
+        return 9;
+      case UUID:
+        outBuffer.put(offset, UUID_HEADER);
+        VariantUtil.writeBufferAbsolute(
+            outBuffer, offset + 1, UUIDUtil.convertToByteBuffer((UUID) value));
+        return 17;
     }
 
     throw new UnsupportedOperationException("Unsupported primitive type: " + type());
+  }
+
+  @Override
+  public int hashCode() {
+    return VariantPrimitive.hash(this);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return VariantPrimitive.equals(this, other);
+  }
+
+  @Override
+  public String toString() {
+    return VariantPrimitive.asString(this);
   }
 }
