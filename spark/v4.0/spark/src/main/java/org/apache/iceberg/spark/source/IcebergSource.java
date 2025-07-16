@@ -237,7 +237,7 @@ public class IcebergSource
   }
 
   private static void setupDefaultSparkCatalogs(SparkSession spark) {
-    if (spark.conf().getOption(DEFAULT_CATALOG).isEmpty()) {
+    if (!spark.conf().contains(DEFAULT_CATALOG)) {
       ImmutableMap<String, String> config =
           ImmutableMap.of(
               "type", "hive",
@@ -248,7 +248,7 @@ public class IcebergSource
       config.forEach((key, value) -> spark.conf().set(DEFAULT_CATALOG + "." + key, value));
     }
 
-    if (spark.conf().getOption(DEFAULT_CACHE_CATALOG).isEmpty()) {
+    if (!spark.conf().contains(DEFAULT_CACHE_CATALOG)) {
       spark.conf().set(DEFAULT_CACHE_CATALOG, SparkCachedTableCatalog.class.getName());
     }
   }

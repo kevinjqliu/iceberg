@@ -18,13 +18,10 @@
  */
 package org.apache.iceberg.spark.procedures;
 
-import java.util.Iterator;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -33,13 +30,11 @@ import org.apache.spark.unsafe.types.UTF8String;
 
 public class FastForwardBranchProcedure extends BaseProcedure {
 
-  static final String NAME = "fast_forward";
-
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
-        requiredInParameter("table", DataTypes.StringType),
-        requiredInParameter("branch", DataTypes.StringType),
-        requiredInParameter("to", DataTypes.StringType)
+        ProcedureParameter.required("table", DataTypes.StringType),
+        ProcedureParameter.required("branch", DataTypes.StringType),
+        ProcedureParameter.required("to", DataTypes.StringType)
       };
 
   private static final StructType OUTPUT_TYPE =
@@ -64,16 +59,17 @@ public class FastForwardBranchProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
-  public Iterator<Scan> call(InternalRow args) {
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
+  public InternalRow[] call(InternalRow args) {
     Identifier tableIdent = toIdentifier(args.getString(0), PARAMETERS[0].name());
     String from = args.getString(1);
     String to = args.getString(2);
@@ -87,13 +83,8 @@ public class FastForwardBranchProcedure extends BaseProcedure {
           long snapshotAfter = table.snapshot(from).snapshotId();
           InternalRow outputRow =
               newInternalRow(UTF8String.fromString(from), snapshotBefore, snapshotAfter);
-          return asScanIterator(OUTPUT_TYPE, outputRow);
+          return new InternalRow[] {outputRow};
         });
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

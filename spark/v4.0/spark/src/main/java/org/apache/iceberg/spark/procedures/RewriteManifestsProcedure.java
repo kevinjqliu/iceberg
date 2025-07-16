@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.spark.procedures;
 
-import java.util.Iterator;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.RewriteManifests;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
@@ -28,9 +27,7 @@ import org.apache.iceberg.spark.procedures.SparkProcedures.ProcedureBuilder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -46,13 +43,11 @@ import org.apache.spark.sql.types.StructType;
  */
 class RewriteManifestsProcedure extends BaseProcedure {
 
-  static final String NAME = "rewrite_manifests";
-
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
-        requiredInParameter("table", DataTypes.StringType),
-        optionalInParameter("use_caching", DataTypes.BooleanType),
-        optionalInParameter("spec_id", DataTypes.IntegerType)
+        ProcedureParameter.required("table", DataTypes.StringType),
+        ProcedureParameter.optional("use_caching", DataTypes.BooleanType),
+        ProcedureParameter.optional("spec_id", DataTypes.IntegerType)
       };
 
   // counts are not nullable since the action result is never null
@@ -78,17 +73,17 @@ class RewriteManifestsProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
-  @Override
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
-  public Iterator<Scan> call(InternalRow args) {
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
+  public InternalRow[] call(InternalRow args) {
     Identifier tableIdent = toIdentifier(args.getString(0), PARAMETERS[0].name());
     Boolean useCaching = args.isNullAt(1) ? null : args.getBoolean(1);
     Integer specId = args.isNullAt(2) ? null : args.getInt(2);
@@ -108,7 +103,7 @@ class RewriteManifestsProcedure extends BaseProcedure {
 
           RewriteManifests.Result result = action.execute();
 
-          return asScanIterator(OUTPUT_TYPE, toOutputRows(result));
+          return toOutputRows(result);
         });
   }
 
@@ -117,11 +112,6 @@ class RewriteManifestsProcedure extends BaseProcedure {
     int addedManifestsCount = Iterables.size(result.addedManifests());
     InternalRow row = newInternalRow(rewrittenManifestsCount, addedManifestsCount);
     return new InternalRow[] {row};
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

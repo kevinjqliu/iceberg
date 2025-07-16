@@ -62,7 +62,6 @@ import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.Decimal;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
-import org.apache.spark.unsafe.types.VariantVal;
 
 public class SparkParquetReaders {
   private SparkParquetReaders() {}
@@ -734,11 +733,6 @@ public class SparkParquetReaders {
     @Override
     public MapData getMap(int ordinal) {
       return (MapData) values[ordinal];
-    }
-
-    @Override
-    public VariantVal getVariant(int ordinal) {
-      throw new UnsupportedOperationException("Unsupported method: getVariant");
     }
   }
 }

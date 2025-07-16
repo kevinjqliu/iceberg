@@ -30,7 +30,7 @@ import org.apache.iceberg.NullOrder
 import org.apache.iceberg.SortDirection
 import org.apache.iceberg.expressions.Term
 import org.apache.iceberg.spark.Spark3Util
-import org.apache.spark.sql.AnalysisException
+import org.apache.spark.sql.catalyst.analysis.IcebergAnalysisException
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.Literal
 import org.apache.spark.sql.catalyst.parser.ParserInterface
@@ -38,8 +38,6 @@ import org.apache.spark.sql.catalyst.parser.extensions.IcebergParserUtils.withOr
 import org.apache.spark.sql.catalyst.parser.extensions.IcebergSqlExtensionsParser._
 import org.apache.spark.sql.catalyst.plans.logical.AddPartitionField
 import org.apache.spark.sql.catalyst.plans.logical.BranchOptions
-import org.apache.spark.sql.catalyst.plans.logical.CallArgument
-import org.apache.spark.sql.catalyst.plans.logical.CallStatement
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceBranch
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceTag
 import org.apache.spark.sql.catalyst.plans.logical.DropBranch
@@ -47,8 +45,6 @@ import org.apache.spark.sql.catalyst.plans.logical.DropIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.DropPartitionField
 import org.apache.spark.sql.catalyst.plans.logical.DropTag
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan
-import org.apache.spark.sql.catalyst.plans.logical.NamedArgument
-import org.apache.spark.sql.catalyst.plans.logical.PositionalArgument
 import org.apache.spark.sql.catalyst.plans.logical.ReplacePartitionField
 import org.apache.spark.sql.catalyst.plans.logical.SetIdentifierFields
 import org.apache.spark.sql.catalyst.plans.logical.SetWriteDistributionAndOrdering
@@ -67,15 +63,6 @@ class IcebergSqlExtensionsAstBuilder(delegate: ParserInterface) extends IcebergS
 
   private def toBuffer[T](list: java.util.List[T]): scala.collection.mutable.Buffer[T] = list.asScala
   private def toSeq[T](list: java.util.List[T]): Seq[T] = toBuffer(list).toSeq
-
-  /**
-   * Create a [[CallStatement]] for a stored procedure call.
-   */
-  override def visitCall(ctx: CallContext): CallStatement = withOrigin(ctx) {
-    val name = toSeq(ctx.multipartIdentifier.parts).map(_.getText)
-    val args = toSeq(ctx.callArgument).map(typedVisit[CallArgument])
-    CallStatement(name, args)
-  }
 
   /**
    * Create an ADD PARTITION FIELD logical command.
@@ -221,7 +208,7 @@ class IcebergSqlExtensionsAstBuilder(delegate: ParserInterface) extends IcebergS
     val (distributionSpec, orderingSpec) = toDistributionAndOrderingSpec(ctx.writeSpec)
 
     if (distributionSpec == null && orderingSpec == null) {
-      throw new AnalysisException(
+      throw new IcebergAnalysisException(
         "ALTER TABLE has no changes: missing both distribution and ordering clauses")
     }
 
@@ -248,11 +235,11 @@ class IcebergSqlExtensionsAstBuilder(delegate: ParserInterface) extends IcebergS
       writeSpec: WriteSpecContext): (WriteDistributionSpecContext, WriteOrderingSpecContext) = {
 
     if (writeSpec.writeDistributionSpec.size > 1) {
-      throw new AnalysisException("ALTER TABLE contains multiple distribution clauses")
+      throw new IcebergAnalysisException("ALTER TABLE contains multiple distribution clauses")
     }
 
     if (writeSpec.writeOrderingSpec.size > 1) {
-      throw new AnalysisException("ALTER TABLE contains multiple ordering clauses")
+      throw new IcebergAnalysisException("ALTER TABLE contains multiple ordering clauses")
     }
 
     val distributionSpec = toBuffer(writeSpec.writeDistributionSpec).headOption.orNull
@@ -313,23 +300,6 @@ class IcebergSqlExtensionsAstBuilder(delegate: ParserInterface) extends IcebergS
 
   override def visitSingleOrder(ctx: SingleOrderContext): Seq[(Term, SortDirection, NullOrder)] = withOrigin(ctx) {
     toSeq(ctx.order.fields).map(typedVisit[(Term, SortDirection, NullOrder)])
-  }
-
-  /**
-   * Create a positional argument in a stored procedure call.
-   */
-  override def visitPositionalArgument(ctx: PositionalArgumentContext): CallArgument = withOrigin(ctx) {
-    val expr = typedVisit[Expression](ctx.expression)
-    PositionalArgument(expr)
-  }
-
-  /**
-   * Create a named argument in a stored procedure call.
-   */
-  override def visitNamedArgument(ctx: NamedArgumentContext): CallArgument = withOrigin(ctx) {
-    val name = ctx.identifier.getText
-    val expr = typedVisit[Expression](ctx.expression)
-    NamedArgument(name, expr)
   }
 
   override def visitSingleStatement(ctx: SingleStatementContext): LogicalPlan = withOrigin(ctx) {

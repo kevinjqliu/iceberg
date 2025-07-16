@@ -19,7 +19,6 @@
 package org.apache.iceberg.spark.procedures;
 
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,9 +41,7 @@ import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.catalyst.expressions.OrderUtils;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -88,20 +85,18 @@ import org.apache.spark.unsafe.types.UTF8String;
  */
 public class CreateChangelogViewProcedure extends BaseProcedure {
 
-  static final String NAME = "create_changelog_view";
-
   private static final ProcedureParameter TABLE_PARAM =
-      requiredInParameter("table", DataTypes.StringType);
+      ProcedureParameter.required("table", DataTypes.StringType);
   private static final ProcedureParameter CHANGELOG_VIEW_PARAM =
-      optionalInParameter("changelog_view", DataTypes.StringType);
+      ProcedureParameter.optional("changelog_view", DataTypes.StringType);
   private static final ProcedureParameter OPTIONS_PARAM =
-      optionalInParameter("options", STRING_MAP);
+      ProcedureParameter.optional("options", STRING_MAP);
   private static final ProcedureParameter COMPUTE_UPDATES_PARAM =
-      optionalInParameter("compute_updates", DataTypes.BooleanType);
+      ProcedureParameter.optional("compute_updates", DataTypes.BooleanType);
   private static final ProcedureParameter IDENTIFIER_COLUMNS_PARAM =
-      optionalInParameter("identifier_columns", STRING_ARRAY);
+      ProcedureParameter.optional("identifier_columns", STRING_ARRAY);
   private static final ProcedureParameter NET_CHANGES =
-      optionalInParameter("net_changes", DataTypes.BooleanType);
+      ProcedureParameter.optional("net_changes", DataTypes.BooleanType);
 
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
@@ -133,17 +128,17 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
-  @Override
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
-  public Iterator<Scan> call(InternalRow args) {
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
+  public InternalRow[] call(InternalRow args) {
     ProcedureInput input = new ProcedureInput(spark(), tableCatalog(), PARAMETERS, args);
 
     Identifier tableIdent = input.ident(TABLE_PARAM);
@@ -176,7 +171,7 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
 
     df.createOrReplaceTempView(viewName);
 
-    return asScanIterator(OUTPUT_TYPE, toOutputRows(viewName));
+    return toOutputRows(viewName);
   }
 
   private Dataset<Row> computeUpdateImages(String[] identifierColumns, Dataset<Row> df) {
@@ -186,15 +181,12 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
 
     Column[] repartitionSpec = new Column[identifierColumns.length + 1];
     for (int i = 0; i < identifierColumns.length; i++) {
-      repartitionSpec[i] = df.col(CreateChangelogViewProcedure.delimitedName(identifierColumns[i]));
+      repartitionSpec[i] = df.col(identifierColumns[i]);
     }
 
     repartitionSpec[repartitionSpec.length - 1] = df.col(MetadataColumns.CHANGE_ORDINAL.name());
 
-    String[] identifierFields = Arrays.copyOf(identifierColumns, identifierColumns.length + 1);
-    identifierFields[identifierFields.length - 1] = MetadataColumns.CHANGE_ORDINAL.name();
-
-    return applyChangelogIterator(df, repartitionSpec, identifierFields);
+    return applyChangelogIterator(df, repartitionSpec);
   }
 
   private boolean shouldComputeUpdateImages(ProcedureInput input) {
@@ -232,7 +224,9 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
       return input.asStringArray(IDENTIFIER_COLUMNS_PARAM);
     } else {
       Table table = loadSparkTable(tableIdent).table();
-      return table.schema().identifierFieldNames().stream().toArray(String[]::new);
+      return table.schema().identifierFieldNames().stream()
+          .map(CreateChangelogViewProcedure::delimitedName)
+          .toArray(String[]::new);
     }
   }
 
@@ -252,10 +246,11 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
     return input.asString(CHANGELOG_VIEW_PARAM, defaultValue);
   }
 
-  private Dataset<Row> applyChangelogIterator(
-      Dataset<Row> df, Column[] repartitionSpec, String[] identifierFields) {
+  private Dataset<Row> applyChangelogIterator(Dataset<Row> df, Column[] repartitionSpec) {
     Column[] sortSpec = sortSpec(df, repartitionSpec, false);
     StructType schema = df.schema();
+    String[] identifierFields =
+        Arrays.stream(repartitionSpec).map(Column::toString).toArray(String[]::new);
 
     return df.repartition(repartitionSpec)
         .sortWithinPartitions(sortSpec)
@@ -285,7 +280,7 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
   /**
    * Ensure that column can be referenced using this name. Issues may come from field names that
    * contain non-standard characters. In Spark, this can be fixed by using <a
-   * href="https://spark.apache.org/docs/3.5.0/sql-ref-identifier.html#delimited-identifier">backtick
+   * href="https://spark.apache.org/docs/4.0.0/sql-ref-identifier.html#delimited-identifier">backtick
    * quotes</a>.
    *
    * @param columnName Column name that potentially can contain non-standard characters.
@@ -317,11 +312,6 @@ public class CreateChangelogViewProcedure extends BaseProcedure {
   private InternalRow[] toOutputRows(String viewName) {
     InternalRow row = newInternalRow(UTF8String.fromString(viewName));
     return new InternalRow[] {row};
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

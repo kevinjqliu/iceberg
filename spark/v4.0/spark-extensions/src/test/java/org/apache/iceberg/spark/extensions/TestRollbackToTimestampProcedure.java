@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark.extensions;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
@@ -32,6 +33,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -293,20 +295,22 @@ public class TestRollbackToTimestampProcedure extends ExtensionsTestBase {
                     "CALL %s.system.rollback_to_timestamp(namespace => 'n1', 't', %s)",
                     catalogName, timestamp))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[UNEXPECTED_POSITIONAL_ARGUMENT] Cannot invoke routine `rollback_to_timestamp` because it contains positional argument(s) following the named argument assigned to `namespace`; please rearrange them so the positional arguments come first and then retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Named and positional arguments cannot be mixed");
 
     assertThatThrownBy(
             () -> sql("CALL %s.custom.rollback_to_timestamp('n', 't', %s)", catalogName, timestamp))
-        .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[FAILED_TO_LOAD_ROUTINE] Failed to load routine `%s`.`custom`.`rollback_to_timestamp`. SQLSTATE: 38000",
-            catalogName);
+        .isInstanceOf(ParseException.class)
+        .hasMessageContaining("Syntax error")
+        .satisfies(
+            exception -> {
+              ParseException parseException = (ParseException) exception;
+              assertThat(parseException.getErrorClass()).isEqualTo("PARSE_SYNTAX_ERROR");
+              assertThat(parseException.getMessageParameters()).containsEntry("error", "'CALL'");
+            });
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_timestamp('t')", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_timestamp` because the parameter named `timestamp` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 0 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [timestamp]");
 
     assertThatThrownBy(
             () ->
@@ -314,13 +318,11 @@ public class TestRollbackToTimestampProcedure extends ExtensionsTestBase {
                     "CALL %s.system.rollback_to_timestamp(timestamp => %s)",
                     catalogName, timestamp))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_timestamp` because the parameter named `table` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 0 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [table]");
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_timestamp(table => 't')", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_timestamp` because the parameter named `timestamp` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 1 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [timestamp]");
 
     assertThatThrownBy(
             () ->
@@ -328,12 +330,10 @@ public class TestRollbackToTimestampProcedure extends ExtensionsTestBase {
                     "CALL %s.system.rollback_to_timestamp('n', 't', %s, 1L)",
                     catalogName, timestamp))
         .isInstanceOf(AnalysisException.class)
-        .hasMessageStartingWith(
-            "[WRONG_NUM_ARGS.WITHOUT_SUGGESTION] The `rollback_to_timestamp` requires 2 parameters but the actual number is 4.");
+        .hasMessage("Too many arguments for procedure");
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_timestamp('t', 2.2)", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessageStartingWith(
-            "[DATATYPE_MISMATCH.UNEXPECTED_INPUT_TYPE] Cannot resolve CALL due to data type mismatch: The second parameter requires the \"TIMESTAMP\" type, however \"2.2\" has the type \"DECIMAL(2,1)\". SQLSTATE: 42K09");
+        .hasMessage("Wrong arg type for timestamp: cannot cast DecimalType(2,1) to TimestampType");
   }
 }

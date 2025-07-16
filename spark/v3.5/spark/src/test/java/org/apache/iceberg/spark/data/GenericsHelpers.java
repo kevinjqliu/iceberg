@@ -73,15 +73,11 @@ public class GenericsHelpers {
   }
 
   public static void assertEqualsBatch(
-      Types.StructType struct,
-      Iterator<Record> expectedRecords,
-      ColumnarBatch batch,
-      Map<Integer, Object> idToConstant,
-      Integer batchFirstRowPos) {
-    for (int rowPos = 0; rowPos < batch.numRows(); rowPos++) {
-      InternalRow row = batch.getRow(rowPos);
+      Types.StructType struct, Iterator<Record> expectedRecords, ColumnarBatch batch) {
+    for (int rowId = 0; rowId < batch.numRows(); rowId++) {
+      InternalRow row = batch.getRow(rowId);
       Record expectedRecord = expectedRecords.next();
-      assertEqualsUnsafe(struct, expectedRecord, row, idToConstant, batchFirstRowPos + rowPos);
+      assertEqualsUnsafe(struct, expectedRecord, row);
     }
   }
 

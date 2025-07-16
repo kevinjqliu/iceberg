@@ -61,7 +61,7 @@ public class IcebergArrowColumnVector extends ColumnVector {
 
   public void closeIfFreeable() {
     // If a column vector is writable or constant, it should override this method and do nothing.
-    // See more details at SPARK-50235, SPARK-50463 (Fixed in Spark 3.5.4)
+    // See more details at SPARK-50235, SPARK-50463 (Fixed in Spark 4.0.4)
   }
 
   @Override

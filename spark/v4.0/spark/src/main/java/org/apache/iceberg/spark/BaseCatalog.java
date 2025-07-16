@@ -22,12 +22,13 @@ import org.apache.iceberg.spark.procedures.SparkProcedures;
 import org.apache.iceberg.spark.procedures.SparkProcedures.ProcedureBuilder;
 import org.apache.iceberg.spark.source.HasIcebergCatalog;
 import org.apache.iceberg.util.PropertyUtil;
+import org.apache.spark.sql.catalyst.analysis.NoSuchProcedureException;
 import org.apache.spark.sql.connector.catalog.Identifier;
-import org.apache.spark.sql.connector.catalog.ProcedureCatalog;
 import org.apache.spark.sql.connector.catalog.StagingTableCatalog;
 import org.apache.spark.sql.connector.catalog.SupportsNamespaces;
 import org.apache.spark.sql.connector.catalog.ViewCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.UnboundProcedure;
+import org.apache.spark.sql.connector.iceberg.catalog.Procedure;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureCatalog;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 abstract class BaseCatalog
@@ -44,7 +45,7 @@ abstract class BaseCatalog
   private boolean useNullableQuerySchema = USE_NULLABLE_QUERY_SCHEMA_CTAS_RTAS_DEFAULT;
 
   @Override
-  public UnboundProcedure loadProcedure(Identifier ident) {
+  public Procedure loadProcedure(Identifier ident) throws NoSuchProcedureException {
     String[] namespace = ident.namespace();
     String name = ident.name();
 
@@ -57,7 +58,7 @@ abstract class BaseCatalog
       }
     }
 
-    throw new RuntimeException("Procedure " + ident + " not found");
+    throw new NoSuchProcedureException(ident);
   }
 
   @Override

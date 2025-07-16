@@ -18,15 +18,12 @@
  */
 package org.apache.iceberg.spark.procedures;
 
-import java.util.Iterator;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.spark.procedures.SparkProcedures.ProcedureBuilder;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -42,12 +39,10 @@ import org.apache.spark.sql.types.StructType;
  */
 class RollbackToSnapshotProcedure extends BaseProcedure {
 
-  static final String NAME = "rollback_to_snapshot";
-
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
-        requiredInParameter("table", DataTypes.StringType),
-        requiredInParameter("snapshot_id", DataTypes.LongType)
+        ProcedureParameter.required("table", DataTypes.StringType),
+        ProcedureParameter.required("snapshot_id", DataTypes.LongType)
       };
 
   private static final StructType OUTPUT_TYPE =
@@ -71,17 +66,17 @@ class RollbackToSnapshotProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
-  @Override
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
-  public Iterator<Scan> call(InternalRow args) {
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
+  public InternalRow[] call(InternalRow args) {
     Identifier tableIdent = toIdentifier(args.getString(0), PARAMETERS[0].name());
     long snapshotId = args.getLong(1);
 
@@ -93,13 +88,8 @@ class RollbackToSnapshotProcedure extends BaseProcedure {
           table.manageSnapshots().rollbackTo(snapshotId).commit();
 
           InternalRow outputRow = newInternalRow(previousSnapshot.snapshotId(), snapshotId);
-          return asScanIterator(OUTPUT_TYPE, outputRow);
+          return new InternalRow[] {outputRow};
         });
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

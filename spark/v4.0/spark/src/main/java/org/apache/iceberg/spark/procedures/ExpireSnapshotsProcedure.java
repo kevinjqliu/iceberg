@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.spark.procedures;
 
-import java.util.Iterator;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.ExpireSnapshots;
 import org.apache.iceberg.io.SupportsBulkOperations;
@@ -30,9 +29,7 @@ import org.apache.iceberg.util.DateTimeUtil;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -47,19 +44,17 @@ import org.slf4j.LoggerFactory;
  */
 public class ExpireSnapshotsProcedure extends BaseProcedure {
 
-  static final String NAME = "expire_snapshots";
-
   private static final Logger LOG = LoggerFactory.getLogger(ExpireSnapshotsProcedure.class);
 
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {
-        requiredInParameter("table", DataTypes.StringType),
-        optionalInParameter("older_than", DataTypes.TimestampType),
-        optionalInParameter("retain_last", DataTypes.IntegerType),
-        optionalInParameter("max_concurrent_deletes", DataTypes.IntegerType),
-        optionalInParameter("stream_results", DataTypes.BooleanType),
-        optionalInParameter("snapshot_ids", DataTypes.createArrayType(DataTypes.LongType)),
-        optionalInParameter("clean_expired_metadata", DataTypes.BooleanType)
+        ProcedureParameter.required("table", DataTypes.StringType),
+        ProcedureParameter.optional("older_than", DataTypes.TimestampType),
+        ProcedureParameter.optional("retain_last", DataTypes.IntegerType),
+        ProcedureParameter.optional("max_concurrent_deletes", DataTypes.IntegerType),
+        ProcedureParameter.optional("stream_results", DataTypes.BooleanType),
+        ProcedureParameter.optional("snapshot_ids", DataTypes.createArrayType(DataTypes.LongType)),
+        ProcedureParameter.optional("clean_expired_metadata", DataTypes.BooleanType)
       };
 
   private static final StructType OUTPUT_TYPE =
@@ -92,18 +87,18 @@ public class ExpireSnapshotsProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
-  @Override
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
   @SuppressWarnings("checkstyle:CyclomaticComplexity")
-  public Iterator<Scan> call(InternalRow args) {
+  public InternalRow[] call(InternalRow args) {
     Identifier tableIdent = toIdentifier(args.getString(0), PARAMETERS[0].name());
     Long olderThanMillis = args.isNullAt(1) ? null : DateTimeUtil.microsToMillis(args.getLong(1));
     Integer retainLastNum = args.isNullAt(2) ? null : args.getInt(2);
@@ -161,7 +156,7 @@ public class ExpireSnapshotsProcedure extends BaseProcedure {
 
           ExpireSnapshots.Result result = action.execute();
 
-          return asScanIterator(OUTPUT_TYPE, toOutputRows(result));
+          return toOutputRows(result);
         });
   }
 
@@ -175,11 +170,6 @@ public class ExpireSnapshotsProcedure extends BaseProcedure {
             result.deletedManifestListsCount(),
             result.deletedStatisticsFilesCount());
     return new InternalRow[] {row};
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

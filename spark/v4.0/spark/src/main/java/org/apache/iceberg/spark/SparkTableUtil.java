@@ -940,13 +940,7 @@ public class SparkTableUtil {
   public static Dataset<Row> loadTable(SparkSession spark, Table table, long snapshotId) {
     SparkTable sparkTable = new SparkTable(table, snapshotId, false);
     DataSourceV2Relation relation = createRelation(sparkTable, ImmutableMap.of());
-    Preconditions.checkArgument(
-        spark instanceof org.apache.spark.sql.classic.SparkSession,
-        "Expected instance of org.apache.spark.sql.classic.SparkSession, but got: %s",
-        spark.getClass().getName());
-
-    return org.apache.spark.sql.classic.Dataset.ofRows(
-        (org.apache.spark.sql.classic.SparkSession) spark, relation);
+    return Dataset.ofRows(spark, relation);
   }
 
   public static Dataset<Row> loadMetadataTable(
@@ -959,13 +953,7 @@ public class SparkTableUtil {
     Table metadataTable = MetadataTableUtils.createMetadataTableInstance(table, type);
     SparkTable sparkMetadataTable = new SparkTable(metadataTable, false);
     DataSourceV2Relation relation = createRelation(sparkMetadataTable, extraOptions);
-    Preconditions.checkArgument(
-        spark instanceof org.apache.spark.sql.classic.SparkSession,
-        "Expected instance of org.apache.spark.sql.classic.SparkSession, but got: %s",
-        spark.getClass().getName());
-
-    return org.apache.spark.sql.classic.Dataset.ofRows(
-        (org.apache.spark.sql.classic.SparkSession) spark, relation);
+    return Dataset.ofRows(spark, relation);
   }
 
   private static DataSourceV2Relation createRelation(

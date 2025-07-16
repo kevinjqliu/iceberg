@@ -349,7 +349,7 @@ public class SparkMicroBatchStream implements MicroBatchStream, SupportsAdmissio
       }
     }
 
-    // there is no ReadMaxRows, so return the default
+    // There is no ReadMaxRows, so return the default
     return Integer.MAX_VALUE;
   }
 
@@ -387,7 +387,7 @@ public class SparkMicroBatchStream implements MicroBatchStream, SupportsAdmissio
 
     boolean shouldContinueReading = true;
     int curFilesAdded = 0;
-    int curRecordCount = 0;
+    long curRecordCount = 0;
     int curPos = 0;
 
     // Note : we produce nextOffset with pos as non-inclusive

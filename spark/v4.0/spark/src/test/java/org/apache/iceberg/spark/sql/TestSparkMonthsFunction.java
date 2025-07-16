@@ -113,13 +113,13 @@ public class TestSparkMonthsFunction extends TestBaseWithCatalog {
     assertThat(scalarSql("EXPLAIN EXTENDED SELECT system.months(%s)", dateValue))
         .asString()
         .isNotNull()
-        .contains("static_invoke(" + dateTransformClass);
+        .contains("staticinvoke(class " + dateTransformClass);
 
     String timestampValue = "TIMESTAMP '2017-12-01 10:12:55.038194 UTC+00:00'";
     String timestampTransformClass = MonthsFunction.TimestampToMonthsFunction.class.getName();
     assertThat(scalarSql("EXPLAIN EXTENDED SELECT system.months(%s)", timestampValue))
         .asString()
         .isNotNull()
-        .contains("static_invoke(" + timestampTransformClass);
+        .contains("staticinvoke(class " + timestampTransformClass);
   }
 }
