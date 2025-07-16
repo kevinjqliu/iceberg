@@ -19,7 +19,6 @@
 package org.apache.iceberg.spark.extensions;
 
 import static org.apache.iceberg.TableProperties.WRITE_AUDIT_PUBLISH_ENABLED;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
@@ -31,7 +30,6 @@ import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.spark.sql.AnalysisException;
-import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -201,17 +199,14 @@ public class TestSetCurrentSnapshotProcedure extends ExtensionsTestBase {
                     "CALL %s.system.set_current_snapshot(namespace => 'n1', table => 't', 1L)",
                     catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage("Named and positional arguments cannot be mixed");
+        .hasMessage(
+            "[UNEXPECTED_POSITIONAL_ARGUMENT] Cannot invoke routine `set_current_snapshot` because it contains positional argument(s) following the named argument assigned to `table`; please rearrange them so the positional arguments come first and then retry the query again. SQLSTATE: 4274K");
 
     assertThatThrownBy(() -> sql("CALL %s.custom.set_current_snapshot('n', 't', 1L)", catalogName))
-        .isInstanceOf(ParseException.class)
-        .hasMessageContaining("Syntax error")
-        .satisfies(
-            exception -> {
-              ParseException parseException = (ParseException) exception;
-              assertThat(parseException.getErrorClass()).isEqualTo("PARSE_SYNTAX_ERROR");
-              assertThat(parseException.getMessageParameters()).containsEntry("error", "'CALL'");
-            });
+        .isInstanceOf(AnalysisException.class)
+        .hasMessage(
+            "[FAILED_TO_LOAD_ROUTINE] Failed to load routine `%s`.`custom`.`set_current_snapshot`. SQLSTATE: 38000",
+            catalogName);
 
     assertThatThrownBy(() -> sql("CALL %s.system.set_current_snapshot('t')", catalogName))
         .isInstanceOf(IllegalArgumentException.class)
@@ -224,15 +219,17 @@ public class TestSetCurrentSnapshotProcedure extends ExtensionsTestBase {
     assertThatThrownBy(
             () -> sql("CALL %s.system.set_current_snapshot(snapshot_id => 1L)", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage("Missing required parameters: [table]");
+        .hasMessage(
+            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `set_current_snapshot` because the parameter named `table` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 0 or by name) and retry the query again. SQLSTATE: 4274K");
 
     assertThatThrownBy(() -> sql("CALL %s.system.set_current_snapshot(table => 't')", catalogName))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Either snapshot_id or ref must be provided, not both");
 
-    assertThatThrownBy(() -> sql("CALL %s.system.set_current_snapshot('t', 2.2)", catalogName))
-        .isInstanceOf(AnalysisException.class)
-        .hasMessage("Wrong arg type for snapshot_id: cannot cast DecimalType(2,1) to LongType");
+    assertThatThrownBy(() -> sql("CALL %s.system.set_current_snapshot('t', '2.2')", catalogName))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageStartingWith(
+            "[CAST_INVALID_INPUT] The value '2.2' of the type \"STRING\" cannot be cast to \"BIGINT\" because it is malformed.");
 
     assertThatThrownBy(() -> sql("CALL %s.system.set_current_snapshot('', 1L)", catalogName))
         .isInstanceOf(IllegalArgumentException.class)

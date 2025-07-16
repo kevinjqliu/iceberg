@@ -18,6 +18,7 @@
  */
 package org.apache.iceberg.spark.extensions;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
@@ -30,6 +31,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.spark.sql.AnalysisException;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
+import org.apache.spark.sql.catalyst.parser.ParseException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.TestTemplate;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -250,34 +252,33 @@ public class TestRollbackToSnapshotProcedure extends ExtensionsTestBase {
                     "CALL %s.system.rollback_to_snapshot(namespace => 'n1', table => 't', 1L)",
                     catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[UNEXPECTED_POSITIONAL_ARGUMENT] Cannot invoke routine `rollback_to_snapshot` because it contains positional argument(s) following the named argument assigned to `table`; please rearrange them so the positional arguments come first and then retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Named and positional arguments cannot be mixed");
 
     assertThatThrownBy(() -> sql("CALL %s.custom.rollback_to_snapshot('n', 't', 1L)", catalogName))
-        .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[FAILED_TO_LOAD_ROUTINE] Failed to load routine `%s`.`custom`.`rollback_to_snapshot`. SQLSTATE: 38000",
-            catalogName);
+        .isInstanceOf(ParseException.class)
+        .hasMessageContaining("Syntax error")
+        .satisfies(
+            exception -> {
+              ParseException parseException = (ParseException) exception;
+              assertThat(parseException.getErrorClass()).isEqualTo("PARSE_SYNTAX_ERROR");
+              assertThat(parseException.getMessageParameters()).containsEntry("error", "'CALL'");
+            });
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot('t')", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_snapshot` because the parameter named `snapshot_id` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 0 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [snapshot_id]");
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot(1L)", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_snapshot` because the parameter named `snapshot_id` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 0 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [snapshot_id]");
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot(table => 't')", catalogName))
         .isInstanceOf(AnalysisException.class)
-        .hasMessage(
-            "[REQUIRED_PARAMETER_NOT_FOUND] Cannot invoke routine `rollback_to_snapshot` because the parameter named `snapshot_id` is required, but the routine call did not supply a value. Please update the routine call to supply an argument value (either positionally at index 1 or by name) and retry the query again. SQLSTATE: 4274K");
+        .hasMessage("Missing required parameters: [snapshot_id]");
 
-    assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot('t', '2.2')", catalogName))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageStartingWith(
-            "[CAST_INVALID_INPUT] The value '2.2' of the type \"STRING\" cannot be cast to \"BIGINT\" because it is malformed.");
+    assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot('t', 2.2)", catalogName))
+        .isInstanceOf(AnalysisException.class)
+        .hasMessage("Wrong arg type for snapshot_id: cannot cast DecimalType(2,1) to LongType");
 
     assertThatThrownBy(() -> sql("CALL %s.system.rollback_to_snapshot('', 1L)", catalogName))
         .isInstanceOf(IllegalArgumentException.class)

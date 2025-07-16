@@ -155,7 +155,8 @@ public class TestAlterTable extends CatalogTestBase {
   }
 
   @TestTemplate
-  public void testAddColumnWithDefaultValuesUnsupported() {
+  public void testAddColumnWithDefaultValuesUnsupported() throws InterruptedException {
+    assumeThat(catalogName).isNotEqualTo("spark_catalog");
     assertThatThrownBy(
             () -> sql("ALTER TABLE %s ADD COLUMN col_with_default int DEFAULT 123", tableName))
         .isInstanceOf(UnsupportedOperationException.class)

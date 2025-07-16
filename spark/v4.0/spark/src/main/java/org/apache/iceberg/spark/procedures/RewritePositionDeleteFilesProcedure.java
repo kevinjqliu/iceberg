@@ -18,18 +18,16 @@
  */
 package org.apache.iceberg.spark.procedures;
 
-import java.util.Iterator;
 import java.util.Map;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.actions.RewritePositionDeleteFiles;
+import org.apache.iceberg.actions.RewritePositionDeleteFiles.Result;
 import org.apache.iceberg.expressions.Expression;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.spark.sql.catalyst.InternalRow;
 import org.apache.spark.sql.connector.catalog.Identifier;
 import org.apache.spark.sql.connector.catalog.TableCatalog;
-import org.apache.spark.sql.connector.catalog.procedures.BoundProcedure;
-import org.apache.spark.sql.connector.catalog.procedures.ProcedureParameter;
-import org.apache.spark.sql.connector.read.Scan;
+import org.apache.spark.sql.connector.iceberg.catalog.ProcedureParameter;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -42,14 +40,12 @@ import org.apache.spark.sql.types.StructType;
  */
 public class RewritePositionDeleteFilesProcedure extends BaseProcedure {
 
-  static final String NAME = "rewrite_position_delete_files";
-
   private static final ProcedureParameter TABLE_PARAM =
-      requiredInParameter("table", DataTypes.StringType);
+      ProcedureParameter.required("table", DataTypes.StringType);
   private static final ProcedureParameter OPTIONS_PARAM =
-      optionalInParameter("options", STRING_MAP);
+      ProcedureParameter.optional("options", STRING_MAP);
   private static final ProcedureParameter WHERE_PARAM =
-      optionalInParameter("where", DataTypes.StringType);
+      ProcedureParameter.optional("where", DataTypes.StringType);
 
   private static final ProcedureParameter[] PARAMETERS =
       new ProcedureParameter[] {TABLE_PARAM, OPTIONS_PARAM, WHERE_PARAM};
@@ -79,17 +75,17 @@ public class RewritePositionDeleteFilesProcedure extends BaseProcedure {
   }
 
   @Override
-  public BoundProcedure bind(StructType inputType) {
-    return this;
-  }
-
-  @Override
   public ProcedureParameter[] parameters() {
     return PARAMETERS;
   }
 
   @Override
-  public Iterator<Scan> call(InternalRow args) {
+  public StructType outputType() {
+    return OUTPUT_TYPE;
+  }
+
+  @Override
+  public InternalRow[] call(InternalRow args) {
     ProcedureInput input = new ProcedureInput(spark(), tableCatalog(), PARAMETERS, args);
     Identifier tableIdent = input.ident(TABLE_PARAM);
     Map<String, String> options = input.asStringMap(OPTIONS_PARAM, ImmutableMap.of());
@@ -106,22 +102,17 @@ public class RewritePositionDeleteFilesProcedure extends BaseProcedure {
             action = action.filter(whereExpression);
           }
 
-          RewritePositionDeleteFiles.Result result = action.execute();
-          return asScanIterator(OUTPUT_TYPE, toOutputRow(result));
+          Result result = action.execute();
+          return new InternalRow[] {toOutputRow(result)};
         });
   }
 
-  private InternalRow toOutputRow(RewritePositionDeleteFiles.Result result) {
+  private InternalRow toOutputRow(Result result) {
     return newInternalRow(
         result.rewrittenDeleteFilesCount(),
         result.addedDeleteFilesCount(),
         result.rewrittenBytesCount(),
         result.addedBytesCount());
-  }
-
-  @Override
-  public String name() {
-    return NAME;
   }
 
   @Override

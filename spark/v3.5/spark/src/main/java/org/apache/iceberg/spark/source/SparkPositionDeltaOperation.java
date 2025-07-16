@@ -102,7 +102,6 @@ class SparkPositionDeltaOperation implements RowLevelOperation, SupportsDelta {
     List<NamedReference> metadataAttributes = Lists.newArrayList();
     metadataAttributes.add(Expressions.column(MetadataColumns.SPEC_ID.name()));
     metadataAttributes.add(Expressions.column(MetadataColumns.PARTITION_COLUMN_NAME));
-
     if (TableUtil.supportsRowLineage(table)) {
       metadataAttributes.add(Expressions.column(MetadataColumns.ROW_ID.name()));
       metadataAttributes.add(

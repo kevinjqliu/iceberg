@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.apache.iceberg.ParameterizedTestExtension;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.TestBaseWithCatalog;
@@ -185,7 +186,12 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
 
   @TestTemplate
   public void testWriteWithCaseSensitiveOption() throws NoSuchTableException, ParseException {
-    SparkSession sparkSession = spark.cloneSession();
+    Preconditions.checkArgument(
+        spark instanceof org.apache.spark.sql.classic.SparkSession,
+        "Expected instance of org.apache.spark.sql.classic.SparkSession, but got: %s",
+        spark.getClass().getName());
+
+    SparkSession sparkSession = ((org.apache.spark.sql.classic.SparkSession) spark).cloneSession();
     sparkSession
         .sql(
             String.format(
@@ -316,7 +322,7 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
         jsonToDF(
             "id float, data string",
             "{ \"id\": 3.0, \"data\": \"c\" }",
-            "{ \"id\": 4.0, \"data\": \"d\" }");
+            "{ \"id\": 3.5, \"data\": \"d\" }");
 
     // merge-schema=true on writes allows table schema updates when incoming data has schema changes
     assertThatCode(() -> floatDF.writeTo(tableName).option("merge-schema", "true").append())
@@ -324,7 +330,7 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
 
     assertEquals(
         "Should include new rows with unchanged double column type",
-        ImmutableList.of(row(1.0, "a"), row(2.0, "b"), row(3.0, "c"), row(4.0, "d")),
+        ImmutableList.of(row(1.0, "a"), row(2.0, "b"), row(3.0, "c"), row(3.5, "d")),
         sql("select * from %s order by id", tableName));
 
     // verify the column type did not change
@@ -358,7 +364,7 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
         jsonToDF(
             "id decimal(4,2), data string",
             "{ \"id\": 3.0, \"data\": \"c\" }",
-            "{ \"id\": 4.0, \"data\": \"d\" }");
+            "{ \"id\": 3.5, \"data\": \"d\" }");
 
     // merge-schema=true on writes allows table schema updates when incoming data has schema changes
     assertThatCode(
@@ -371,7 +377,7 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
             row(new BigDecimal("1.00"), "a"),
             row(new BigDecimal("2.00"), "b"),
             row(new BigDecimal("3.00"), "c"),
-            row(new BigDecimal("4.00"), "d")),
+            row(new BigDecimal("3.50"), "d")),
         sql("select * from %s order by id", tableName));
 
     // verify the decimal column precision did not change

@@ -44,7 +44,6 @@ import org.apache.spark.sql.connector.write.Write;
 import org.apache.spark.sql.connector.write.WriteBuilder;
 import org.apache.spark.sql.connector.write.streaming.StreamingWrite;
 import org.apache.spark.sql.sources.Filter;
-import org.apache.spark.sql.types.LongType$;
 import org.apache.spark.sql.types.StructType;
 
 class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, SupportsOverwrite {
@@ -124,16 +123,8 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     // In any other case, only null row IDs and sequence numbers would be produced which
     // means the row lineage columns can be excluded from the output files
     boolean writeIncludesRowLineage = TableUtil.supportsRowLineage(table) && overwriteFiles;
-    StructType sparkWriteSchema = dsSchema;
-    if (writeIncludesRowLineage) {
-      sparkWriteSchema = sparkWriteSchema.add(MetadataColumns.ROW_ID.name(), LongType$.MODULE$);
-      sparkWriteSchema =
-          sparkWriteSchema.add(
-              MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.name(), LongType$.MODULE$);
-    }
-
     Schema writeSchema =
-        validateOrMergeWriteSchema(table, sparkWriteSchema, writeConf, writeIncludesRowLineage);
+        validateOrMergeWriteSchema(table, dsSchema, writeConf, writeIncludesRowLineage);
 
     SparkUtil.validatePartitionTransforms(table.spec());
 
@@ -141,14 +132,7 @@ class SparkWriteBuilder implements WriteBuilder, SupportsDynamicOverwrite, Suppo
     String appId = spark.sparkContext().applicationId();
 
     return new SparkWrite(
-        spark,
-        table,
-        writeConf,
-        writeInfo,
-        appId,
-        writeSchema,
-        sparkWriteSchema,
-        writeRequirements()) {
+        spark, table, writeConf, writeInfo, appId, writeSchema, dsSchema, writeRequirements()) {
 
       @Override
       public BatchWrite toBatch() {

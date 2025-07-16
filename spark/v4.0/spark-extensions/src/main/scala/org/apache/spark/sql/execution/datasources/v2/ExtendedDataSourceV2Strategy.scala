@@ -22,15 +22,17 @@ package org.apache.spark.sql.execution.datasources.v2
 import org.apache.iceberg.spark.Spark3Util
 import org.apache.iceberg.spark.SparkCatalog
 import org.apache.iceberg.spark.SparkSessionCatalog
+import org.apache.spark.sql.AnalysisException
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.Strategy
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.analysis.IcebergAnalysisException
 import org.apache.spark.sql.catalyst.analysis.ResolvedIdentifier
 import org.apache.spark.sql.catalyst.analysis.ResolvedNamespace
 import org.apache.spark.sql.catalyst.expressions.Expression
 import org.apache.spark.sql.catalyst.expressions.GenericInternalRow
 import org.apache.spark.sql.catalyst.expressions.PredicateHelper
 import org.apache.spark.sql.catalyst.plans.logical.AddPartitionField
+import org.apache.spark.sql.catalyst.plans.logical.Call
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceBranch
 import org.apache.spark.sql.catalyst.plans.logical.CreateOrReplaceTag
 import org.apache.spark.sql.catalyst.plans.logical.DescribeRelation
@@ -52,7 +54,6 @@ import org.apache.spark.sql.catalyst.plans.logical.views.CreateIcebergView
 import org.apache.spark.sql.catalyst.plans.logical.views.DropIcebergView
 import org.apache.spark.sql.catalyst.plans.logical.views.ResolvedV2View
 import org.apache.spark.sql.catalyst.plans.logical.views.ShowIcebergViews
-import org.apache.spark.sql.classic.Strategy
 import org.apache.spark.sql.connector.catalog.Identifier
 import org.apache.spark.sql.connector.catalog.TableCatalog
 import org.apache.spark.sql.connector.catalog.ViewCatalog
@@ -63,6 +64,10 @@ import scala.jdk.CollectionConverters._
 case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy with PredicateHelper {
 
   override def apply(plan: LogicalPlan): Seq[SparkPlan] = plan match {
+    case c @ Call(procedure, args) =>
+      val input = buildInternalRow(args)
+      CallExec(c.output, procedure, input) :: Nil
+
     case AddPartitionField(IcebergCatalogAndIdentifier(catalog, ident), transform, name) =>
       AddPartitionFieldExec(catalog, ident, transform, name) :: Nil
 
@@ -71,7 +76,7 @@ case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy wi
       CreateOrReplaceBranchExec(catalog, ident, branch, branchOptions, create, replace, ifNotExists) :: Nil
 
     case CreateOrReplaceTag(
-        IcebergCatalogAndIdentifier(catalog, ident), tag, tagOptions, create, replace, ifNotExists) =>
+    IcebergCatalogAndIdentifier(catalog, ident), tag, tagOptions, create, replace, ifNotExists) =>
       CreateOrReplaceTagExec(catalog, ident, tag, tagOptions, create, replace, ifNotExists) :: Nil
 
     case DropBranch(IcebergCatalogAndIdentifier(catalog, ident), branch, ifExists) =>
@@ -102,7 +107,7 @@ case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy wi
     case RenameTable(ResolvedV2View(oldCatalog: ViewCatalog, oldIdent), newName, isView@true) =>
       val newIdent = Spark3Util.catalogAndIdentifier(spark, newName.toList.asJava)
       if (oldCatalog.name != newIdent.catalog().name()) {
-        throw new IcebergAnalysisException(
+        throw new AnalysisException(
           s"Cannot move view between catalogs: from=${oldCatalog.name} and to=${newIdent.catalog().name()}")
       }
       RenameV2ViewExec(oldCatalog, oldIdent, newIdent.identifier()) :: Nil
@@ -131,7 +136,7 @@ case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy wi
     case ShowTableProperties(ResolvedV2View(catalog, ident), propertyKey, output) =>
       ShowV2ViewPropertiesExec(output, catalog.loadView(ident), propertyKey) :: Nil
 
-    case ShowIcebergViews(ResolvedNamespace(catalog: ViewCatalog, namespace, _), pattern, output) =>
+    case ShowIcebergViews(ResolvedNamespace(catalog: ViewCatalog, namespace), pattern, output) =>
       ShowV2ViewsExec(output, catalog, namespace, pattern) :: Nil
 
     case ShowCreateTable(ResolvedV2View(catalog, ident), _, output) =>
@@ -144,6 +149,14 @@ case class ExtendedDataSourceV2Strategy(spark: SparkSession) extends Strategy wi
       AlterV2ViewUnsetPropertiesExec(catalog, ident, propertyKeys, ifExists) :: Nil
 
     case _ => Nil
+  }
+
+  private def buildInternalRow(exprs: Seq[Expression]): InternalRow = {
+    val values = new Array[Any](exprs.size)
+    for (index <- exprs.indices) {
+      values(index) = exprs(index).eval()
+    }
+    new GenericInternalRow(values)
   }
 
   private object IcebergCatalogAndIdentifier {

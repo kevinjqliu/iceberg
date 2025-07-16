@@ -39,6 +39,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.TableOperations;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.TableScan;
+import org.apache.iceberg.TableUtil;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.expressions.Evaluator;
 import org.apache.iceberg.expressions.Expression;
@@ -48,6 +49,7 @@ import org.apache.iceberg.expressions.Projections;
 import org.apache.iceberg.expressions.StrictMetricsEvaluator;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
@@ -256,16 +258,57 @@ public class SparkTable
   @Override
   public MetadataColumn[] metadataColumns() {
     DataType sparkPartitionType = SparkSchemaUtil.convert(Partitioning.partitionType(table()));
-    return new MetadataColumn[] {
-      new SparkMetadataColumn(MetadataColumns.SPEC_ID.name(), DataTypes.IntegerType, false),
-      new SparkMetadataColumn(MetadataColumns.PARTITION_COLUMN_NAME, sparkPartitionType, true),
-      new SparkMetadataColumn(MetadataColumns.FILE_PATH.name(), DataTypes.StringType, false),
-      new SparkMetadataColumn(MetadataColumns.ROW_POSITION.name(), DataTypes.LongType, false),
-      new SparkMetadataColumn(MetadataColumns.IS_DELETED.name(), DataTypes.BooleanType, false),
-      new SparkMetadataColumn(MetadataColumns.ROW_ID.name(), DataTypes.LongType, true),
-      new SparkMetadataColumn(
-          MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.name(), DataTypes.LongType, true)
-    };
+    ImmutableList.Builder<SparkMetadataColumn> metadataColumns = ImmutableList.builder();
+    metadataColumns.add(
+        SparkMetadataColumn.builder()
+            .name(MetadataColumns.SPEC_ID.name())
+            .dataType(DataTypes.IntegerType)
+            .withNullability(true)
+            .build(),
+        SparkMetadataColumn.builder()
+            .name(MetadataColumns.PARTITION_COLUMN_NAME)
+            .dataType(sparkPartitionType)
+            .withNullability(true)
+            .build(),
+        SparkMetadataColumn.builder()
+            .name(MetadataColumns.FILE_PATH.name())
+            .dataType(DataTypes.StringType)
+            .withNullability(false)
+            .build(),
+        SparkMetadataColumn.builder()
+            .name(MetadataColumns.ROW_POSITION.name())
+            .dataType(DataTypes.LongType)
+            .withNullability(false)
+            .build(),
+        SparkMetadataColumn.builder()
+            .name(MetadataColumns.IS_DELETED.name())
+            .dataType(DataTypes.BooleanType)
+            .withNullability(false)
+            .build());
+
+    if (TableUtil.supportsRowLineage(icebergTable)) {
+      metadataColumns.add(
+          SparkMetadataColumn.builder()
+              .name(MetadataColumns.ROW_ID.name())
+              .dataType(DataTypes.LongType)
+              .withNullability(true)
+              .preserveOnReinsert(true)
+              .preserveOnUpdate(true)
+              .preserveOnDelete(false)
+              .build());
+
+      metadataColumns.add(
+          SparkMetadataColumn.builder()
+              .name(MetadataColumns.LAST_UPDATED_SEQUENCE_NUMBER.name())
+              .dataType(DataTypes.LongType)
+              .withNullability(true)
+              .preserveOnReinsert(false)
+              .preserveOnUpdate(false)
+              .preserveOnDelete(false)
+              .build());
+    }
+
+    return metadataColumns.build().toArray(SparkMetadataColumn[]::new);
   }
 
   @Override

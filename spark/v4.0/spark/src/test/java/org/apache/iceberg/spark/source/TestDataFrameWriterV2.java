@@ -26,7 +26,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import org.apache.iceberg.ParameterizedTestExtension;
 import org.apache.iceberg.TableProperties;
-import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.spark.Spark3Util;
 import org.apache.iceberg.spark.TestBaseWithCatalog;
@@ -186,12 +185,7 @@ public class TestDataFrameWriterV2 extends TestBaseWithCatalog {
 
   @TestTemplate
   public void testWriteWithCaseSensitiveOption() throws NoSuchTableException, ParseException {
-    Preconditions.checkArgument(
-        spark instanceof org.apache.spark.sql.classic.SparkSession,
-        "Expected instance of org.apache.spark.sql.classic.SparkSession, but got: %s",
-        spark.getClass().getName());
-
-    SparkSession sparkSession = ((org.apache.spark.sql.classic.SparkSession) spark).cloneSession();
+    SparkSession sparkSession = spark.cloneSession();
     sparkSession
         .sql(
             String.format(

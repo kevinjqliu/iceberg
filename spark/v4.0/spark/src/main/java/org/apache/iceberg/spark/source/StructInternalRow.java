@@ -60,7 +60,6 @@ import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.types.TimestampType;
 import org.apache.spark.unsafe.types.CalendarInterval;
 import org.apache.spark.unsafe.types.UTF8String;
-import org.apache.spark.unsafe.types.VariantVal;
 
 class StructInternalRow extends InternalRow {
   private final Types.StructType type;
@@ -227,11 +226,6 @@ class StructInternalRow extends InternalRow {
   @Override
   public MapData getMap(int ordinal) {
     return isNullAt(ordinal) ? null : getMapInternal(ordinal);
-  }
-
-  @Override
-  public VariantVal getVariant(int ordinal) {
-    throw new UnsupportedOperationException("Unsupported method: getVariant");
   }
 
   private MapData getMapInternal(int ordinal) {

@@ -159,7 +159,7 @@ public class TestForwardCompatibility {
 
     assertThatThrownBy(query::processAllAvailable)
         .isInstanceOf(StreamingQueryException.class)
-        .hasMessageContaining("Cannot write using unsupported transforms: zero");
+        .hasMessageEndingWith("Cannot write using unsupported transforms: zero");
   }
 
   @Test

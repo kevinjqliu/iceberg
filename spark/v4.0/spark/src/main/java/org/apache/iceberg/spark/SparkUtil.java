@@ -154,9 +154,8 @@ public class SparkUtil {
     // Find keys for the catalog intended to be hadoop configurations
     final String hadoopConfCatalogPrefix = hadoopConfPrefixForCatalog(catalogName);
     final Configuration conf = spark.sessionState().newHadoopConf();
-
     spark
-        .sessionState()
+        .sqlContext()
         .conf()
         .settings()
         .forEach(

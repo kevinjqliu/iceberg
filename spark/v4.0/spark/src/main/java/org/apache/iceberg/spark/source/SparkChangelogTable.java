@@ -110,31 +110,11 @@ public class SparkChangelogTable implements Table, SupportsRead, SupportsMetadat
   public MetadataColumn[] metadataColumns() {
     DataType sparkPartitionType = SparkSchemaUtil.convert(Partitioning.partitionType(icebergTable));
     return new MetadataColumn[] {
-      SparkMetadataColumn.builder()
-          .name(MetadataColumns.SPEC_ID.name())
-          .dataType(DataTypes.IntegerType)
-          .withNullability(true)
-          .build(),
-      SparkMetadataColumn.builder()
-          .name(MetadataColumns.PARTITION_COLUMN_NAME)
-          .dataType(sparkPartitionType)
-          .withNullability(true)
-          .build(),
-      SparkMetadataColumn.builder()
-          .name(MetadataColumns.FILE_PATH.name())
-          .dataType(DataTypes.StringType)
-          .withNullability(false)
-          .build(),
-      SparkMetadataColumn.builder()
-          .name(MetadataColumns.ROW_POSITION.name())
-          .dataType(DataTypes.LongType)
-          .withNullability(false)
-          .build(),
-      SparkMetadataColumn.builder()
-          .name(MetadataColumns.IS_DELETED.name())
-          .dataType(DataTypes.BooleanType)
-          .withNullability(false)
-          .build(),
+      new SparkMetadataColumn(MetadataColumns.SPEC_ID.name(), DataTypes.IntegerType, false),
+      new SparkMetadataColumn(MetadataColumns.PARTITION_COLUMN_NAME, sparkPartitionType, true),
+      new SparkMetadataColumn(MetadataColumns.FILE_PATH.name(), DataTypes.StringType, false),
+      new SparkMetadataColumn(MetadataColumns.ROW_POSITION.name(), DataTypes.LongType, false),
+      new SparkMetadataColumn(MetadataColumns.IS_DELETED.name(), DataTypes.BooleanType, false)
     };
   }
 }
