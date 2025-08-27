@@ -31,6 +31,7 @@ import org.apache.parquet.schema.Type;
 import org.apache.parquet.schema.Type.Repetition;
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
+import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
@@ -182,19 +183,17 @@ public class ParquetWithSparkSchemaVisitor<T> {
 
   private static <T> List<T> visitFields(
       StructType struct, GroupType group, ParquetWithSparkSchemaVisitor<T> visitor) {
-    StructField[] sFields = struct.fields();
-    Preconditions.checkArgument(
-        sFields.length == group.getFieldCount(), "Structs do not match: %s and %s", struct, group);
     List<T> results = Lists.newArrayListWithExpectedSize(group.getFieldCount());
-    for (int i = 0; i < sFields.length; i += 1) {
-      Type field = group.getFields().get(i);
-      StructField sField = sFields[i];
-      Preconditions.checkArgument(
-          field.getName().equals(AvroSchemaUtil.makeCompatibleName(sField.name())),
-          "Structs do not match: field %s != %s",
-          field.getName(),
-          sField.name());
-      results.add(visitField(sField, field, visitor));
+    for (StructField sField : struct.fields()) {
+      String fieldName = AvroSchemaUtil.makeCompatibleName(sField.name());
+      if (sField.dataType() != DataTypes.NullType) {
+        Type field = group.getType(fieldName);
+        results.add(visitField(sField, field, visitor));
+      } else {
+        // skip null types since they don't exist in Parquet
+        Preconditions.checkArgument(
+            !group.containsField(fieldName), "Null Spark type should not exist in Parquet");
+      }
     }
 
     return results;
