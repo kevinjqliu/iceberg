@@ -60,7 +60,6 @@ project(':iceberg-kafka-connect:iceberg-kafka-connect') {
 
 project(':iceberg-kafka-connect:iceberg-kafka-connect-runtime') {
   apply plugin: 'distribution'
-  apply from: "${rootDir}/license.gradle"
 
   configurations {
     hive {
@@ -79,10 +78,6 @@ project(':iceberg-kafka-connect:iceberg-kafka-connect-runtime') {
         force 'commons-beanutils:commons-beanutils:1.11.0'
       }
     }
-  }
-
-  licenseReport {
-    configurations = ['hive']
   }
 
   sourceSets {
