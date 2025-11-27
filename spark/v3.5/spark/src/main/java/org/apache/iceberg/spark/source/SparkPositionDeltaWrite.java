@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import org.apache.iceberg.ContentFile;
@@ -141,7 +142,7 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
   @Override
   public Distribution requiredDistribution() {
     Distribution distribution = writeRequirements.distribution();
-    LOG.info("Requesting {} as write distribution for table {}", distribution, table.name());
+    LOG.debug("Requesting {} as write distribution for table {}", distribution, table.name());
     return distribution;
   }
 
@@ -153,14 +154,14 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
   @Override
   public SortOrder[] requiredOrdering() {
     SortOrder[] ordering = writeRequirements.ordering();
-    LOG.info("Requesting {} as write ordering for table {}", ordering, table.name());
+    LOG.debug("Requesting {} as write ordering for table {}", ordering, table.name());
     return ordering;
   }
 
   @Override
   public long advisoryPartitionSizeInBytes() {
     long size = writeRequirements.advisoryPartitionSize();
-    LOG.info("Requesting {} bytes advisory partition size for table {}", size, table.name());
+    LOG.debug("Requesting {} bytes advisory partition size for table {}", size, table.name());
     return size;
   }
 
@@ -258,6 +259,7 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
 
         String commitMsg =
             String.format(
+                Locale.ROOT,
                 "position delta with %d data files, %d delete files and %d rewritten delete files"
                     + "(scanSnapshotId: %d, conflictDetectionFilter: %s, isolationLevel: %s)",
                 addedDataFilesCount,
@@ -271,8 +273,10 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
       } else {
         String commitMsg =
             String.format(
+                Locale.ROOT,
                 "position delta with %d data files and %d delete files (no validation required)",
-                addedDataFilesCount, addedDeleteFilesCount);
+                addedDataFilesCount,
+                addedDeleteFilesCount);
         commitOperation(rowDelta, commitMsg);
       }
     }
@@ -590,7 +594,7 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
 
       String file = id.getString(fileOrdinal);
       long position = id.getLong(positionOrdinal);
-      positionDelete.set(file, position, null);
+      positionDelete.set(file, position);
       delegate.write(positionDelete, spec, partitionProjection);
     }
 
@@ -822,6 +826,9 @@ class SparkPositionDeltaWrite implements DeltaWrite, RequiresDistributionAndOrde
       return targetDataFileSize;
     }
 
+    /* @deprecated This method is deprecated as of version 1.11.0 and will be removed in 1.12.0.
+     *     Position deletes that include row data are no longer supported.
+     */
     StructType deleteSparkType() {
       return deleteSparkType;
     }

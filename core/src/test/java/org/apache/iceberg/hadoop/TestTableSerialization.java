@@ -20,6 +20,10 @@ package org.apache.iceberg.hadoop;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -29,6 +33,7 @@ import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
 import java.util.Map;
 import java.util.Set;
+import org.apache.iceberg.BaseTable;
 import org.apache.iceberg.FileScanTask;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.MetadataTableType;
@@ -49,6 +54,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Sets;
 import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 public class TestTableSerialization extends HadoopTableTestBase {
@@ -69,6 +75,8 @@ public class TestTableSerialization extends HadoopTableTestBase {
     assertThat(((HasTableOperations) serializableTable).operations())
         .isInstanceOf(StaticTableOperations.class);
     assertThat(TableUtil.formatVersion(serializableTable)).isEqualTo(2);
+    assertThat(TableUtil.metadataFileLocation(serializableTable))
+        .isEqualTo(TableUtil.metadataFileLocation(table));
   }
 
   @Test
@@ -96,22 +104,23 @@ public class TestTableSerialization extends HadoopTableTestBase {
     TestHelpers.assertSerializedMetadata(txn.table(), TestHelpers.roundTripSerialize(txn.table()));
   }
 
-  @Test
-  public void testSerializableMetadataTable() throws IOException, ClassNotFoundException {
-    for (MetadataTableType type : MetadataTableType.values()) {
-      Table metadataTable = getMetaDataTable(table, type);
-      TestHelpers.assertSerializedAndLoadedMetadata(
-          metadataTable, TestHelpers.roundTripSerialize(metadataTable));
-      Table serializableTable = SerializableTable.copyOf(metadataTable);
-      TestHelpers.assertSerializedAndLoadedMetadata(
-          serializableTable, TestHelpers.KryoHelpers.roundTripSerialize(serializableTable));
-      assertThatThrownBy(() -> ((HasTableOperations) serializableTable).operations())
-          .isInstanceOf(UnsupportedOperationException.class)
-          .hasMessageEndingWith("does not support operations()");
-      assertThatThrownBy(() -> TableUtil.formatVersion(serializableTable))
-          .isInstanceOf(UnsupportedOperationException.class)
-          .hasMessageEndingWith("does not have a format version");
-    }
+  @ParameterizedTest
+  @EnumSource(MetadataTableType.class)
+  public void testSerializableMetadataTable(MetadataTableType type)
+      throws IOException, ClassNotFoundException {
+    Table metadataTable = getMetaDataTable(table, type);
+    TestHelpers.assertSerializedAndLoadedMetadata(
+        metadataTable, TestHelpers.roundTripSerialize(metadataTable));
+    Table serializableTable = SerializableTable.copyOf(metadataTable);
+    TestHelpers.assertSerializedAndLoadedMetadata(
+        serializableTable, TestHelpers.KryoHelpers.roundTripSerialize(serializableTable));
+    assertThatThrownBy(() -> ((HasTableOperations) serializableTable).operations())
+        .isInstanceOf(UnsupportedOperationException.class)
+        .hasMessageEndingWith("does not support operations()");
+    assertThat(TableUtil.metadataFileLocation(serializableTable))
+        .isEqualTo(TableUtil.metadataFileLocation(table));
+    assertThat(TableUtil.formatVersion(serializableTable))
+        .isEqualTo(((BaseTable) table).operations().current().formatVersion());
   }
 
   @Test
@@ -192,6 +201,52 @@ public class TestTableSerialization extends HadoopTableTestBase {
   private static Table getMetaDataTable(Table table, MetadataTableType type) {
     return TABLES.load(
         ((HasTableOperations) table).operations().current().metadataFileLocation() + "#" + type);
+  }
+
+  @Test
+  public void testLocationProviderExceptionIsDeferred() {
+    Table spyTable = spy(table);
+    RuntimeException failure = new RuntimeException("location provider failure");
+    when(spyTable.locationProvider()).thenThrow(failure);
+
+    // SerializableTable.copyOf should not throw an exception even if locationProvider fails
+    Table serializableTable = SerializableTable.copyOf(spyTable);
+    assertThat(serializableTable).isNotNull();
+
+    // The exception should be thrown when locationProvider() is actually called
+    assertThatThrownBy(serializableTable::locationProvider).isSameAs(failure);
+
+    // Verify that the original table's locationProvider was called during construction
+    verify(spyTable, times(1)).locationProvider();
+  }
+
+  @Test
+  public void testLocationProviderExceptionJavaSerialization()
+      throws IOException, ClassNotFoundException {
+    Table spyTable = spy(table);
+    RuntimeException failure = new RuntimeException("location provider failure");
+    when(spyTable.locationProvider()).thenThrow(failure);
+
+    Table serializableTable = SerializableTable.copyOf(spyTable);
+    Table deserialized = TestHelpers.roundTripSerialize(serializableTable);
+
+    assertThatThrownBy(deserialized::locationProvider)
+        .isInstanceOf(RuntimeException.class)
+        .hasMessage("location provider failure");
+  }
+
+  @Test
+  public void testLocationProviderExceptionKryoSerialization() throws IOException {
+    Table spyTable = spy(table);
+    RuntimeException failure = new RuntimeException("location provider failure");
+    when(spyTable.locationProvider()).thenThrow(failure);
+
+    Table serializableTable = SerializableTable.copyOf(spyTable);
+    Table deserialized = TestHelpers.KryoHelpers.roundTripSerialize(serializableTable);
+
+    assertThatThrownBy(deserialized::locationProvider)
+        .isInstanceOf(RuntimeException.class)
+        .hasMessage("location provider failure");
   }
 
   private static Set<CharSequence> getFiles(Table table) throws IOException {

@@ -33,9 +33,40 @@ public class TableUtil {
     } else if (table instanceof HasTableOperations) {
       HasTableOperations ops = (HasTableOperations) table;
       return ops.operations().current().formatVersion();
+    } else if (table instanceof BaseMetadataTable) {
+      BaseMetadataTable metadataTable = (BaseMetadataTable) table;
+      return metadataTable.table().operations().current().formatVersion();
     } else {
       throw new IllegalArgumentException(
           String.format("%s does not have a format version", table.getClass().getSimpleName()));
     }
+  }
+
+  /** Returns the metadata file location of the given table */
+  public static String metadataFileLocation(Table table) {
+    Preconditions.checkArgument(null != table, "Invalid table: null");
+
+    if (table instanceof SerializableTable) {
+      SerializableTable serializableTable = (SerializableTable) table;
+      return serializableTable.metadataFileLocation();
+    } else if (table instanceof HasTableOperations) {
+      HasTableOperations ops = (HasTableOperations) table;
+      return ops.operations().current().metadataFileLocation();
+    } else if (table instanceof BaseMetadataTable) {
+      return ((BaseMetadataTable) table).table().operations().current().metadataFileLocation();
+    } else {
+      throw new IllegalArgumentException(
+          String.format(
+              "%s does not have a metadata file location", table.getClass().getSimpleName()));
+    }
+  }
+
+  public static boolean supportsRowLineage(Table table) {
+    Preconditions.checkArgument(null != table, "Invalid table: null");
+    if (table instanceof BaseMetadataTable) {
+      return false;
+    }
+
+    return formatVersion(table) >= TableMetadata.MIN_FORMAT_VERSION_ROW_LINEAGE;
   }
 }

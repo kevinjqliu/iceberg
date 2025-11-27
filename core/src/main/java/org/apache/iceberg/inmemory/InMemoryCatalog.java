@@ -51,6 +51,7 @@ import org.apache.iceberg.relocated.com.google.common.collect.Maps;
 import org.apache.iceberg.view.BaseMetastoreViewCatalog;
 import org.apache.iceberg.view.BaseViewOperations;
 import org.apache.iceberg.view.ViewMetadata;
+import org.apache.iceberg.view.ViewOperations;
 import org.apache.iceberg.view.ViewUtil;
 
 /**
@@ -216,6 +217,12 @@ public class InMemoryCatalog extends BaseMetastoreViewCatalog
             "Namespace %s is not empty. Contains %d table(s).", namespace, tableIdentifiers.size());
       }
 
+      List<TableIdentifier> viewIdentifiers = listViews(namespace);
+      if (!viewIdentifiers.isEmpty()) {
+        throw new NamespaceNotEmptyException(
+            "Namespace %s is not empty. Contains %d view(s).", namespace, viewIdentifiers.size());
+      }
+
       return namespaces.remove(namespace) != null;
     }
   }
@@ -330,7 +337,7 @@ public class InMemoryCatalog extends BaseMetastoreViewCatalog
   }
 
   @Override
-  protected InMemoryViewOperations newViewOps(TableIdentifier identifier) {
+  protected ViewOperations newViewOps(TableIdentifier identifier) {
     return new InMemoryViewOperations(io, identifier);
   }
 

@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.UUID;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Transaction;
@@ -36,11 +35,13 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.catalog.ViewCatalog;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.CommitFailedException;
+import org.apache.iceberg.exceptions.NamespaceNotEmptyException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
+import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.exceptions.NoSuchViewException;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.types.Types;
-import org.assertj.core.api.Assumptions;
+import org.apache.iceberg.util.LocationUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -62,6 +63,16 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @TempDir private Path tempDir;
 
+  protected String viewLocation(String... paths) {
+    StringBuilder location =
+        new StringBuilder(LocationUtil.stripTrailingSlash(tempDir.toFile().toURI().toString()));
+    for (String path : paths) {
+      location.append("/").append(path);
+    }
+
+    return location.toString();
+  }
+
   protected boolean requiresNamespaceCreate() {
     return false;
   }
@@ -76,6 +87,63 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   protected boolean supportsEmptyNamespace() {
     return false;
+  }
+
+  @Test
+  public void loadViewWithNonExistingNamespace() {
+    TableIdentifier ident = TableIdentifier.of("non-existing", "view");
+    assertThat(catalog().viewExists(ident)).as("View should not exist").isFalse();
+    assertThatThrownBy(() -> catalog().loadView(ident))
+        .isInstanceOf(NoSuchViewException.class)
+        .hasMessageStartingWith("View does not exist: %s", ident);
+  }
+
+  @Test
+  public void loadViewThatAlreadyExistsAsTable() {
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
+
+    TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(tableIdentifier.namespace());
+    }
+
+    assertThat(tableCatalog().tableExists(tableIdentifier)).as("Table should not exist").isFalse();
+
+    tableCatalog().buildTable(tableIdentifier, SCHEMA).create();
+
+    assertThat(tableCatalog().tableExists(tableIdentifier)).as("Table should exist").isTrue();
+    assertThat(catalog().viewExists(tableIdentifier)).as("View should not exist").isFalse();
+
+    assertThatThrownBy(() -> catalog().loadView(tableIdentifier))
+        .isInstanceOf(NoSuchViewException.class)
+        .hasMessageStartingWith("View does not exist");
+  }
+
+  @Test
+  public void loadTableThatAlreadyExistsAsView() {
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
+
+    TableIdentifier viewIdentifier = TableIdentifier.of("ns", "table");
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(viewIdentifier.namespace());
+    }
+
+    assertThat(catalog().viewExists(viewIdentifier)).as("View should not exists").isFalse();
+    catalog()
+        .buildView(viewIdentifier)
+        .withSchema(SCHEMA)
+        .withDefaultNamespace(viewIdentifier.namespace())
+        .withQuery("spark", "select * from ns.tbl")
+        .create();
+
+    assertThat(catalog().viewExists(viewIdentifier)).as("View should exist").isTrue();
+    assertThat(tableCatalog().tableExists(viewIdentifier)).as("Table should not exist").isFalse();
+
+    assertThatThrownBy(() -> tableCatalog().loadTable(viewIdentifier))
+        .isInstanceOf(NoSuchTableException.class)
+        .hasMessageStartingWith("Table does not exist");
   }
 
   @Test
@@ -164,6 +232,39 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
   }
 
   @Test
+  public void overrideViewProperties() {
+    TableIdentifier identifier = TableIdentifier.of("ns", "view");
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(identifier.namespace());
+    }
+
+    assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
+
+    View view =
+        catalog()
+            .buildView(identifier)
+            .withSchema(SCHEMA)
+            .withDefaultNamespace(identifier.namespace())
+            .withDefaultCatalog(catalog().name())
+            .withQuery("spark", "select * from ns.tbl")
+            .withProperty("key4", "catalog-overridden-key4")
+            .withProperty("prop1", "val1")
+            .create();
+
+    assertThat(view).isNotNull();
+    assertThat(view.properties())
+        .containsEntry("key1", "catalog-default-key1")
+        .containsEntry("key2", "catalog-default-key2")
+        .containsEntry("key3", "catalog-override-key3")
+        .containsEntry("key4", "catalog-override-key4")
+        .containsEntry("prop1", "val1");
+
+    assertThat(catalog().dropView(identifier)).isTrue();
+    assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
+  }
+
+  @Test
   public void completeCreateView() {
     TableIdentifier identifier = TableIdentifier.of("ns", "view");
 
@@ -173,8 +274,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
     assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
 
-    String location =
-        Paths.get(tempDir.toUri().toString(), Paths.get("ns", "view").toString()).toString();
+    String location = viewLocation(identifier.namespace().toString(), identifier.name());
     View view =
         catalog()
             .buildView(identifier)
@@ -237,6 +337,38 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
     assertThat(catalog().dropView(identifier)).isTrue();
     assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
+  }
+
+  @Test
+  public void createViewWithCustomMetadataLocation() {
+    TableIdentifier identifier = TableIdentifier.of("ns", "view");
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(identifier.namespace());
+    }
+
+    assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
+
+    String location = viewLocation();
+    String customLocation = viewLocation("custom-location");
+
+    View view =
+        catalog()
+            .buildView(identifier)
+            .withSchema(SCHEMA)
+            .withDefaultNamespace(identifier.namespace())
+            .withDefaultCatalog(catalog().name())
+            .withQuery("spark", "select * from ns.tbl")
+            .withProperty(ViewProperties.WRITE_METADATA_LOCATION, customLocation)
+            .withLocation(location)
+            .create();
+
+    assertThat(view).isNotNull();
+    assertThat(catalog().viewExists(identifier)).as("View should exist").isTrue();
+    assertThat(view.properties()).containsEntry("write.metadata.path", customLocation);
+    assertThat(((BaseView) view).operations().current().metadataFileLocation())
+        .isNotNull()
+        .startsWith(customLocation);
   }
 
   @Test
@@ -327,9 +459,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void createViewThatAlreadyExistsAsTable() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
 
@@ -357,9 +487,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void createTableThatAlreadyExistsAsView() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
 
@@ -385,9 +513,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void createTableViaTransactionThatAlreadyExistsAsView() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
 
@@ -415,9 +541,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void replaceTableViaTransactionThatAlreadyExistsAsView() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
 
@@ -448,9 +572,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void createOrReplaceTableViaTransactionThatAlreadyExistsAsView() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
 
@@ -481,9 +603,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void replaceViewThatAlreadyExistsAsTable() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
 
@@ -511,9 +631,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void createOrReplaceViewThatAlreadyExistsAsTable() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
 
@@ -691,9 +809,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void renameViewTargetAlreadyExistsAsTable() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
     TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
@@ -726,9 +842,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void renameTableTargetAlreadyExistsAsView() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     TableIdentifier viewIdentifier = TableIdentifier.of("ns", "view");
     TableIdentifier tableIdentifier = TableIdentifier.of("ns", "table");
@@ -854,9 +968,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
   @Test
   public void listViewsAndTables() {
-    Assumptions.assumeThat(tableCatalog())
-        .as("Only valid for catalogs that support tables")
-        .isNotNull();
+    assumeThat(tableCatalog()).as("Only valid for catalogs that support tables").isNotNull();
 
     Namespace ns = Namespace.of("ns");
 
@@ -1481,8 +1593,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
     assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
 
-    String location =
-        Paths.get(tempDir.toUri().toString(), Paths.get("ns", "view").toString()).toString();
+    String location = viewLocation(identifier.namespace().toString(), identifier.name());
     View view =
         catalog()
             .buildView(identifier)
@@ -1500,9 +1611,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
       assertThat(view.location()).isNotNull();
     }
 
-    String updatedLocation =
-        Paths.get(tempDir.toUri().toString(), Paths.get("updated", "ns", "view").toString())
-            .toString();
+    String updatedLocation = viewLocation("updated", "ns", "view");
     view =
         catalog()
             .buildView(identifier)
@@ -1532,8 +1641,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
 
     assertThat(catalog().viewExists(identifier)).as("View should not exist").isFalse();
 
-    String location =
-        Paths.get(tempDir.toUri().toString(), Paths.get("ns", "view").toString()).toString();
+    String location = viewLocation(identifier.namespace().toString(), identifier.name());
     View view =
         catalog()
             .buildView(identifier)
@@ -1550,9 +1658,7 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
       assertThat(view.location()).isNotNull();
     }
 
-    String updatedLocation =
-        Paths.get(tempDir.toUri().toString(), Paths.get("updated", "ns", "view").toString())
-            .toString();
+    String updatedLocation = viewLocation("updated", "ns", "view");
     view.updateLocation().setLocation(updatedLocation).commit();
 
     View updatedView = catalog().loadView(identifier);
@@ -1810,5 +1916,56 @@ public abstract class ViewCatalogTests<C extends ViewCatalog & SupportsNamespace
     assertThatThrownBy(() -> view.sqlFor(""))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Invalid dialect: (empty string)");
+  }
+
+  @Test
+  public void dropNonEmptyNamespace() {
+    TableIdentifier viewIdent = TableIdentifier.of("ns", "view");
+    TableIdentifier tableIdent = TableIdentifier.of("ns", "tbl");
+
+    assertThat(catalog().namespaceExists(viewIdent.namespace()))
+        .as("Namespace should not exist")
+        .isFalse();
+
+    if (requiresNamespaceCreate()) {
+      catalog().createNamespace(viewIdent.namespace());
+    }
+
+    assertThat(catalog().namespaceExists(viewIdent.namespace()))
+        .as("Namespace should exist")
+        .isTrue();
+
+    tableCatalog().buildTable(tableIdent, SCHEMA).create();
+    assertThat(tableCatalog().tableExists(tableIdent)).as("Table should exist").isTrue();
+
+    catalog()
+        .buildView(viewIdent)
+        .withSchema(SCHEMA)
+        .withDefaultNamespace(viewIdent.namespace())
+        .withDefaultCatalog(catalog().name())
+        .withQuery("spark", "select * from ns.tbl")
+        .create();
+    assertThat(catalog().viewExists(viewIdent)).as("View should exist").isTrue();
+
+    // dropping the namespace should fail, because the table & view hasn't been dropped
+    assertThatThrownBy(() -> catalog().dropNamespace(viewIdent.namespace()))
+        .isInstanceOf(NamespaceNotEmptyException.class)
+        .hasMessageContaining("is not empty");
+
+    tableCatalog().dropTable(tableIdent);
+    assertThat(tableCatalog().tableExists(tableIdent)).as("Table should not exist").isFalse();
+
+    // dropping the namespace should fail, because the view hasn't been dropped
+    assertThatThrownBy(() -> catalog().dropNamespace(viewIdent.namespace()))
+        .isInstanceOf(NamespaceNotEmptyException.class)
+        .hasMessageContaining("is not empty");
+
+    catalog().dropView(viewIdent);
+    assertThat(catalog().viewExists(viewIdent)).as("View should not exist").isFalse();
+
+    assertThat(catalog().dropNamespace(viewIdent.namespace())).isTrue();
+    assertThat(catalog().namespaceExists(viewIdent.namespace()))
+        .as("Namespace should not exist")
+        .isFalse();
   }
 }

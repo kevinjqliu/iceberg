@@ -53,6 +53,22 @@ class GenericReaders {
     return TimestamptzReader.INSTANCE;
   }
 
+  static ValueReader<LocalDateTime> timestampNanos() {
+    return TimestampNanoReader.INSTANCE;
+  }
+
+  static ValueReader<OffsetDateTime> timestamptzNanos() {
+    return TimestamptzNanoReader.INSTANCE;
+  }
+
+  static ValueReader<LocalDateTime> timestampMillis() {
+    return TimestampMillisReader.INSTANCE;
+  }
+
+  static ValueReader<OffsetDateTime> timestamptzMillis() {
+    return TimestamptzMillisReader.INSTANCE;
+  }
+
   static ValueReader<Record> struct(
       List<Pair<Integer, ValueReader<?>>> readPlan, StructType struct) {
     return new PlannedRecordReader(readPlan, struct);
@@ -104,6 +120,50 @@ class GenericReaders {
     @Override
     public OffsetDateTime read(Decoder decoder, Object reuse) throws IOException {
       return DateTimeUtil.timestamptzFromMicros(decoder.readLong());
+    }
+  }
+
+  private static class TimestampNanoReader implements ValueReader<LocalDateTime> {
+    private static final TimestampNanoReader INSTANCE = new TimestampNanoReader();
+
+    private TimestampNanoReader() {}
+
+    @Override
+    public LocalDateTime read(Decoder decoder, Object reuse) throws IOException {
+      return DateTimeUtil.timestampFromNanos(decoder.readLong());
+    }
+  }
+
+  private static class TimestamptzNanoReader implements ValueReader<OffsetDateTime> {
+    private static final TimestamptzNanoReader INSTANCE = new TimestamptzNanoReader();
+
+    private TimestamptzNanoReader() {}
+
+    @Override
+    public OffsetDateTime read(Decoder decoder, Object reuse) throws IOException {
+      return DateTimeUtil.timestamptzFromNanos(decoder.readLong());
+    }
+  }
+
+  private static class TimestampMillisReader implements ValueReader<LocalDateTime> {
+    private static final TimestampMillisReader INSTANCE = new TimestampMillisReader();
+
+    private TimestampMillisReader() {}
+
+    @Override
+    public LocalDateTime read(Decoder decoder, Object reuse) throws IOException {
+      return DateTimeUtil.timestampFromMillis(decoder.readLong());
+    }
+  }
+
+  private static class TimestamptzMillisReader implements ValueReader<OffsetDateTime> {
+    private static final TimestamptzMillisReader INSTANCE = new TimestamptzMillisReader();
+
+    private TimestamptzMillisReader() {}
+
+    @Override
+    public OffsetDateTime read(Decoder decoder, Object reuse) throws IOException {
+      return DateTimeUtil.timestamptzFromMillis(decoder.readLong());
     }
   }
 

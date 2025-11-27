@@ -26,6 +26,8 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.expressions.Literal;
 import org.apache.iceberg.relocated.com.google.common.base.Preconditions;
 import org.apache.iceberg.relocated.com.google.common.collect.Lists;
 import org.apache.iceberg.types.Type;
@@ -138,13 +140,9 @@ public class SchemaParser {
     generator.writeEndObject();
   }
 
-  static void toJson(Type.PrimitiveType primitive, JsonGenerator generator) throws IOException {
-    generator.writeString(primitive.toString());
-  }
-
   static void toJson(Type type, JsonGenerator generator) throws IOException {
-    if (type.isPrimitiveType()) {
-      toJson(type.asPrimitiveType(), generator);
+    if (type.isPrimitiveType() || type.isVariantType()) {
+      generator.writeString(type.toString());
     } else {
       Type.NestedType nested = type.asNestedType();
       switch (type.typeId()) {
@@ -179,7 +177,7 @@ public class SchemaParser {
 
   private static Type typeFromJson(JsonNode json) {
     if (json.isTextual()) {
-      return Types.fromPrimitiveString(json.asText());
+      return Types.fromTypeName(json.asText());
     } else if (json.isObject()) {
       JsonNode typeObj = json.get(TYPE);
       if (typeObj != null) {
@@ -197,9 +195,16 @@ public class SchemaParser {
     throw new IllegalArgumentException("Cannot parse type from json: " + json);
   }
 
-  private static Object defaultFromJson(String defaultField, Type type, JsonNode json) {
+  private static Literal<?> defaultFromJson(String defaultField, Type type, JsonNode json) {
     if (json.has(defaultField)) {
-      return SingleValueParser.fromJson(type, json.get(defaultField));
+      Object value = SingleValueParser.fromJson(type, json.get(defaultField));
+      if (type instanceof Types.TimestampNanoType) {
+        // Call Expressions.nanos instead of Expressions.lit to prevent overflow
+        // https://github.com/apache/iceberg/issues/13160
+        return Expressions.nanos((long) value);
+      }
+
+      return Expressions.lit(value);
     }
 
     return null;
@@ -229,8 +234,8 @@ public class SchemaParser {
       String name = JsonUtil.getString(NAME, field);
       Type type = typeFromJson(JsonUtil.get(TYPE, field));
 
-      Object initialDefault = defaultFromJson(INITIAL_DEFAULT, type, field);
-      Object writeDefault = defaultFromJson(WRITE_DEFAULT, type, field);
+      Literal<?> initialDefault = defaultFromJson(INITIAL_DEFAULT, type, field);
+      Literal<?> writeDefault = defaultFromJson(WRITE_DEFAULT, type, field);
 
       String doc = JsonUtil.getStringOrNull(DOC, field);
       boolean isRequired = JsonUtil.getBool(REQUIRED, field);

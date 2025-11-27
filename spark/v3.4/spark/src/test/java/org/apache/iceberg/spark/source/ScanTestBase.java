@@ -22,8 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.apache.avro.generic.GenericData;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.BaseTable;
@@ -32,8 +34,10 @@ import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableOperations;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.hadoop.HadoopTables;
-import org.apache.iceberg.spark.data.AvroDataTest;
+import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
+import org.apache.iceberg.spark.data.AvroDataTestBase;
 import org.apache.iceberg.spark.data.RandomData;
 import org.apache.iceberg.spark.data.TestHelpers;
 import org.apache.iceberg.types.TypeUtil;
@@ -46,7 +50,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.io.TempDir;
 
 /** An AvroDataScan test that validates data by reading through Spark */
-public abstract class ScanTestBase extends AvroDataTest {
+public abstract class ScanTestBase extends AvroDataTestBase {
   private static final Configuration CONF = new Configuration();
 
   protected static SparkSession spark = null;
@@ -54,7 +58,11 @@ public abstract class ScanTestBase extends AvroDataTest {
 
   @BeforeAll
   public static void startSpark() {
-    ScanTestBase.spark = SparkSession.builder().master("local[2]").getOrCreate();
+    ScanTestBase.spark =
+        SparkSession.builder()
+            .config("spark.driver.host", InetAddress.getLoopbackAddress().getHostAddress())
+            .master("local[2]")
+            .getOrCreate();
     ScanTestBase.sc = JavaSparkContext.fromSparkContext(spark.sparkContext());
   }
 
@@ -84,7 +92,15 @@ public abstract class ScanTestBase extends AvroDataTest {
     File location = new File(parent, "test");
 
     HadoopTables tables = new HadoopTables(CONF);
-    Table table = tables.create(writeSchema, PartitionSpec.unpartitioned(), location.toString());
+    // If V3 spec features are used, set the format version to 3
+    Map<String, String> tableProperties =
+        writeSchema.columns().stream()
+                .anyMatch(f -> f.initialDefaultLiteral() != null || f.writeDefaultLiteral() != null)
+            ? ImmutableMap.of(TableProperties.FORMAT_VERSION, "3")
+            : ImmutableMap.of();
+    Table table =
+        tables.create(
+            writeSchema, PartitionSpec.unpartitioned(), tableProperties, location.toString());
 
     // Important: use the table's schema for the rest of the test
     // When tables are created, the column ids are reassigned.

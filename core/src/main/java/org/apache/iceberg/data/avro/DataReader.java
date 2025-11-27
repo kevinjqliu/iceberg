@@ -37,7 +37,7 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 
 /**
- * @deprecated will be removed in 2.0.0; use {@link PlannedDataReader} instead.
+ * @deprecated will be removed in 1.12.0; use {@link PlannedDataReader} instead.
  */
 @Deprecated
 public class DataReader<T> implements DatumReader<T>, SupportsRowPosition {
@@ -139,6 +139,18 @@ public class DataReader<T> implements DatumReader<T>, SupportsRowPosition {
               return GenericReaders.timestamptz();
             }
             return GenericReaders.timestamps();
+
+          case "timestamp-nanos":
+            if (AvroSchemaUtil.isTimestamptz(primitive)) {
+              return GenericReaders.timestamptzNanos();
+            }
+            return GenericReaders.timestampNanos();
+
+          case "timestamp-millis":
+            if (AvroSchemaUtil.isTimestamptz(primitive)) {
+              return GenericReaders.timestamptzMillis();
+            }
+            return GenericReaders.timestampMillis();
 
           case "decimal":
             return ValueReaders.decimal(

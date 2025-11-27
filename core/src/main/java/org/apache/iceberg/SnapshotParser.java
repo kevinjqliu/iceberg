@@ -51,6 +51,9 @@ public class SnapshotParser {
   private static final String MANIFESTS = "manifests";
   private static final String MANIFEST_LIST = "manifest-list";
   private static final String SCHEMA_ID = "schema-id";
+  private static final String FIRST_ROW_ID = "first-row-id";
+  private static final String ADDED_ROWS = "added-rows";
+  private static final String KEY_ID = "key-id";
 
   static void toJson(Snapshot snapshot, JsonGenerator generator) throws IOException {
     generator.writeStartObject();
@@ -95,6 +98,16 @@ public class SnapshotParser {
     if (snapshot.schemaId() != null) {
       generator.writeNumberField(SCHEMA_ID, snapshot.schemaId());
     }
+
+    if (snapshot.firstRowId() != null) {
+      generator.writeNumberField(FIRST_ROW_ID, snapshot.firstRowId());
+    }
+
+    if (snapshot.addedRows() != null) {
+      generator.writeNumberField(ADDED_ROWS, snapshot.addedRows());
+    }
+
+    JsonUtil.writeStringFieldIfPresent(KEY_ID, snapshot.keyId(), generator);
 
     generator.writeEndObject();
   }
@@ -158,6 +171,11 @@ public class SnapshotParser {
 
     Integer schemaId = JsonUtil.getIntOrNull(SCHEMA_ID, node);
 
+    Long firstRowId = JsonUtil.getLongOrNull(FIRST_ROW_ID, node);
+    Long addedRows = JsonUtil.getLongOrNull(ADDED_ROWS, node);
+
+    String keyId = JsonUtil.getStringOrNull(KEY_ID, node);
+
     if (node.has(MANIFEST_LIST)) {
       // the manifest list is stored in a manifest list file
       String manifestList = JsonUtil.getString(MANIFEST_LIST, node);
@@ -169,7 +187,10 @@ public class SnapshotParser {
           operation,
           summary,
           schemaId,
-          manifestList);
+          manifestList,
+          firstRowId,
+          addedRows,
+          keyId);
 
     } else {
       // fall back to an embedded manifest list. pass in the manifest's InputFile so length can be

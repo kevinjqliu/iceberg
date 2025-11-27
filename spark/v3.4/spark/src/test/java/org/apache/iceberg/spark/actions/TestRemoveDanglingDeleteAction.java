@@ -31,25 +31,30 @@ import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileMetadata;
+import org.apache.iceberg.Parameter;
+import org.apache.iceberg.ParameterizedTestExtension;
+import org.apache.iceberg.Parameters;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
+import org.apache.iceberg.TestHelpers;
 import org.apache.iceberg.actions.RemoveDanglingDeleteFiles;
 import org.apache.iceberg.hadoop.HadoopTables;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
-import org.apache.iceberg.spark.SparkTestBase;
+import org.apache.iceberg.spark.TestBase;
 import org.apache.iceberg.types.Types;
 import org.apache.spark.sql.Encoders;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestTemplate;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import scala.Tuple2;
 
-public class TestRemoveDanglingDeleteAction extends SparkTestBase {
+@ExtendWith(ParameterizedTestExtension.class)
+public class TestRemoveDanglingDeleteAction extends TestBase {
   private static final HadoopTables TABLES = new HadoopTables(new Configuration());
   private static final Schema SCHEMA =
       new Schema(
@@ -197,18 +202,24 @@ public class TestRemoveDanglingDeleteAction extends SparkTestBase {
           .withFileSizeInBytes(10)
           .withRecordCount(1)
           .build();
-  @Rule public TemporaryFolder temp = new TemporaryFolder();
+
+  @TempDir private File tableDir;
+  @Parameter private int formatVersion;
+
+  @Parameters(name = "formatVersion = {0}")
+  protected static List<Integer> parameters() {
+    return TestHelpers.V2_AND_ABOVE;
+  }
 
   private String tableLocation = null;
   private Table table;
 
-  @Before
+  @BeforeEach
   public void before() throws Exception {
-    File tableDir = temp.newFolder();
     this.tableLocation = tableDir.toURI().toString();
   }
 
-  @After
+  @AfterEach
   public void after() {
     TABLES.dropTable(tableLocation);
   }
@@ -228,7 +239,7 @@ public class TestRemoveDanglingDeleteAction extends SparkTestBase {
             tableLocation);
   }
 
-  @Test
+  @TestTemplate
   public void testPartitionedDeletesWithLesserSeqNo() {
     setupPartitionedTable();
     // Add Data Files
@@ -322,7 +333,7 @@ public class TestRemoveDanglingDeleteAction extends SparkTestBase {
     assertThat(actualAfter).isEqualTo(expectedAfter);
   }
 
-  @Test
+  @TestTemplate
   public void testPartitionedDeletesWithEqSeqNo() {
     setupPartitionedTable();
     // Add Data Files
@@ -410,7 +421,7 @@ public class TestRemoveDanglingDeleteAction extends SparkTestBase {
     assertThat(actualAfter).isEqualTo(expectedAfter);
   }
 
-  @Test
+  @TestTemplate
   public void testUnpartitionedTable() {
     setupUnpartitionedTable();
     table

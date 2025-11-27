@@ -22,6 +22,7 @@ import java.io.Serializable;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.apache.iceberg.encryption.EncryptedKey;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableSet;
 import org.apache.iceberg.view.ViewMetadata;
 import org.apache.iceberg.view.ViewVersion;
@@ -84,21 +85,9 @@ public interface MetadataUpdate extends Serializable {
 
   class AddSchema implements MetadataUpdate {
     private final Schema schema;
-    private final int lastColumnId;
 
     public AddSchema(Schema schema) {
-      this(schema, schema.highestFieldId());
-    }
-
-    /**
-     * Set the schema
-     *
-     * @deprecated since 1.8.0, will be removed 1.9.0 or 2.0.0, use AddSchema(schema).
-     */
-    @Deprecated
-    public AddSchema(Schema schema, int lastColumnId) {
       this.schema = schema;
-      this.lastColumnId = lastColumnId;
     }
 
     public Schema schema() {
@@ -106,12 +95,12 @@ public interface MetadataUpdate extends Serializable {
     }
 
     public int lastColumnId() {
-      return lastColumnId;
+      return schema.highestFieldId();
     }
 
     @Override
     public void applyTo(TableMetadata.Builder metadataBuilder) {
-      metadataBuilder.addSchema(schema, lastColumnId);
+      metadataBuilder.addSchema(schema);
     }
 
     @Override
@@ -192,6 +181,23 @@ public interface MetadataUpdate extends Serializable {
     }
   }
 
+  class RemoveSchemas implements MetadataUpdate {
+    private final Set<Integer> schemaIds;
+
+    public RemoveSchemas(Set<Integer> schemaIds) {
+      this.schemaIds = schemaIds;
+    }
+
+    public Set<Integer> schemaIds() {
+      return schemaIds;
+    }
+
+    @Override
+    public void applyTo(TableMetadata.Builder metadataBuilder) {
+      metadataBuilder.removeSchemas(schemaIds);
+    }
+  }
+
   class AddSortOrder implements MetadataUpdate {
     private final UnboundSortOrder sortOrder;
 
@@ -231,16 +237,14 @@ public interface MetadataUpdate extends Serializable {
   }
 
   class SetStatistics implements MetadataUpdate {
-    private final long snapshotId;
     private final StatisticsFile statisticsFile;
 
-    public SetStatistics(long snapshotId, StatisticsFile statisticsFile) {
-      this.snapshotId = snapshotId;
+    public SetStatistics(StatisticsFile statisticsFile) {
       this.statisticsFile = statisticsFile;
     }
 
     public long snapshotId() {
-      return snapshotId;
+      return statisticsFile.snapshotId();
     }
 
     public StatisticsFile statisticsFile() {
@@ -249,7 +253,7 @@ public interface MetadataUpdate extends Serializable {
 
     @Override
     public void applyTo(TableMetadata.Builder metadataBuilder) {
-      metadataBuilder.setStatistics(snapshotId, statisticsFile);
+      metadataBuilder.setStatistics(statisticsFile);
     }
   }
 
@@ -325,20 +329,24 @@ public interface MetadataUpdate extends Serializable {
     }
   }
 
-  class RemoveSnapshot implements MetadataUpdate {
-    private final long snapshotId;
+  class RemoveSnapshots implements MetadataUpdate {
+    private final Set<Long> snapshotIds;
 
-    public RemoveSnapshot(long snapshotId) {
-      this.snapshotId = snapshotId;
+    public RemoveSnapshots(long snapshotId) {
+      this.snapshotIds = ImmutableSet.of(snapshotId);
     }
 
-    public long snapshotId() {
-      return snapshotId;
+    public RemoveSnapshots(Set<Long> snapshotIds) {
+      this.snapshotIds = snapshotIds;
+    }
+
+    public Set<Long> snapshotIds() {
+      return snapshotIds;
     }
 
     @Override
     public void applyTo(TableMetadata.Builder metadataBuilder) {
-      metadataBuilder.removeSnapshots(ImmutableSet.of(snapshotId));
+      metadataBuilder.removeSnapshots(snapshotIds);
     }
   }
 
@@ -515,6 +523,40 @@ public interface MetadataUpdate extends Serializable {
     @Override
     public void applyTo(ViewMetadata.Builder viewMetadataBuilder) {
       viewMetadataBuilder.setCurrentVersionId(versionId);
+    }
+  }
+
+  class AddEncryptionKey implements MetadataUpdate {
+    private final EncryptedKey key;
+
+    public AddEncryptionKey(EncryptedKey key) {
+      this.key = key;
+    }
+
+    public EncryptedKey key() {
+      return key;
+    }
+
+    @Override
+    public void applyTo(TableMetadata.Builder builder) {
+      builder.addEncryptionKey(key);
+    }
+  }
+
+  class RemoveEncryptionKey implements MetadataUpdate {
+    private final String keyId;
+
+    public RemoveEncryptionKey(String keyId) {
+      this.keyId = keyId;
+    }
+
+    public String keyId() {
+      return keyId;
+    }
+
+    @Override
+    public void applyTo(TableMetadata.Builder builder) {
+      builder.removeEncryptionKey(keyId);
     }
   }
 }

@@ -1,6 +1,6 @@
 
 Apache Iceberg
-Copyright 2017-2024 The Apache Software Foundation
+Copyright 2017-2025 The Apache Software Foundation
 
 This product includes software developed at
 The Apache Software Foundation (http://www.apache.org/).
@@ -8,7 +8,7 @@ The Apache Software Foundation (http://www.apache.org/).
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.core  Name: jackson-core  Version: 2.17.2
+Group: com.fasterxml.jackson.core  Name: jackson-core  Version: 2.18.4.1
 
 Notice: # Jackson JSON processor
 
@@ -46,7 +46,7 @@ and the licenses and copyrights that apply to that code.
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.datatype  Name: jackson-datatype-jsr310  Version: 2.17.2
+Group: com.fasterxml.jackson.datatype  Name: jackson-datatype-jsr310  Version: 2.18.4
 
 Notice: # Jackson JSON processor
 
@@ -69,8 +69,8 @@ from the source code management (SCM) system project uses.
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.core  Name: jackson-annotations  Version: 2.17.2
-Group: com.fasterxml.jackson.core  Name: jackson-databind  Version: 2.17.2
+Group: com.fasterxml.jackson.core  Name: jackson-annotations  Version: 2.18.4
+Group: com.fasterxml.jackson.core  Name: jackson-databind  Version: 2.18.4
 
 Notice: # Jackson JSON processor
 

@@ -21,8 +21,13 @@ package org.apache.iceberg.spark.extensions;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
+import java.util.List;
 import java.util.Map;
-import org.apache.iceberg.PlanningMode;
+import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.FileFormat;
+import org.apache.iceberg.ParameterizedTestExtension;
 import org.apache.iceberg.RowLevelOperationMode;
 import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
@@ -30,54 +35,35 @@ import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.deletes.DeleteGranularity;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableList;
 import org.apache.iceberg.relocated.com.google.common.collect.ImmutableMap;
+import org.apache.iceberg.spark.data.TestHelpers;
+import org.apache.iceberg.util.ContentFileUtil;
 import org.apache.iceberg.util.SnapshotUtil;
-import org.junit.Test;
+import org.junit.jupiter.api.TestTemplate;
+import org.junit.jupiter.api.extension.ExtendWith;
 
+@ExtendWith(ParameterizedTestExtension.class)
 public class TestMergeOnReadUpdate extends TestUpdate {
-
-  public TestMergeOnReadUpdate(
-      String catalogName,
-      String implementation,
-      Map<String, String> config,
-      String fileFormat,
-      boolean vectorized,
-      String distributionMode,
-      boolean fanoutEnabled,
-      String branch,
-      PlanningMode planningMode) {
-    super(
-        catalogName,
-        implementation,
-        config,
-        fileFormat,
-        vectorized,
-        distributionMode,
-        fanoutEnabled,
-        branch,
-        planningMode);
-  }
 
   @Override
   protected Map<String, String> extraTableProperties() {
     return ImmutableMap.of(
-        TableProperties.FORMAT_VERSION,
-        "2",
-        TableProperties.UPDATE_MODE,
-        RowLevelOperationMode.MERGE_ON_READ.modeName());
+        TableProperties.UPDATE_MODE, RowLevelOperationMode.MERGE_ON_READ.modeName());
   }
 
-  @Test
+  @TestTemplate
   public void testUpdateFileGranularity() {
+    assumeThat(formatVersion).isEqualTo(2);
     checkUpdateFileGranularity(DeleteGranularity.FILE);
   }
 
-  @Test
+  @TestTemplate
   public void testUpdatePartitionGranularity() {
+    assumeThat(formatVersion).isEqualTo(2);
     checkUpdateFileGranularity(DeleteGranularity.PARTITION);
   }
 
-  @Test
-  public void testUpdateFileGranularityMergesDeleteFiles() {
+  @TestTemplate
+  public void testPositionDeletesAreMaintainedDuringUpdate() {
     // Range distribution will produce partition scoped deletes which will not be cleaned up
     assumeThat(distributionMode).isNotEqualToIgnoringCase("range");
 
@@ -103,8 +89,9 @@ public class TestMergeOnReadUpdate extends TestUpdate {
         sql("SELECT * FROM %s ORDER BY dep ASC, id ASC", selectTarget()));
   }
 
-  @Test
-  public void testUpdateUnpartitionedFileGranularityMergesDeleteFiles() {
+  @TestTemplate
+  public void testUnpartitionedPositionDeletesAreMaintainedDuringUpdate() {
+    assumeThat(formatVersion).isEqualTo(2);
     // Range distribution will produce partition scoped deletes which will not be cleaned up
     assumeThat(distributionMode).isNotEqualToIgnoringCase("range");
     initTable("", DeleteGranularity.FILE);
@@ -150,6 +137,55 @@ public class TestMergeOnReadUpdate extends TestUpdate {
         sql("SELECT * FROM %s ORDER BY dep ASC, id ASC", selectTarget()));
   }
 
+  @TestTemplate
+  public void testUpdateWithDVAndHistoricalPositionDeletes() {
+    assumeThat(formatVersion).isEqualTo(2);
+    createTableWithDeleteGranularity(
+        "id INT, dep STRING", "PARTITIONED BY (dep)", DeleteGranularity.PARTITION);
+    createBranchIfNeeded();
+    append(
+        commitTarget(),
+        "{ \"id\": 1, \"dep\": \"hr\" }\n"
+            + "{ \"id\": 2, \"dep\": \"hr\" }\n"
+            + "{ \"id\": 3, \"dep\": \"hr\" }");
+    append(
+        commitTarget(),
+        "{ \"id\": 4, \"dep\": \"hr\" }\n"
+            + "{ \"id\": 5, \"dep\": \"hr\" }\n"
+            + "{ \"id\": 6, \"dep\": \"hr\" }");
+
+    // Produce partition scoped deletes for the two modified files
+    sql("UPDATE %s SET id = id - 1 WHERE id = 1 or id = 4", commitTarget());
+
+    // Produce 1 file-scoped deletes for the second update
+    Map<String, String> fileGranularityProps =
+        ImmutableMap.of(TableProperties.DELETE_GRANULARITY, DeleteGranularity.FILE.toString());
+    sql(
+        "ALTER TABLE %s SET TBLPROPERTIES (%s)",
+        tableName, tablePropsAsString(fileGranularityProps));
+    sql("UPDATE %s SET id = id + 2 WHERE id = 5", commitTarget());
+
+    Map<String, String> updateFormatProperties =
+        ImmutableMap.of(TableProperties.FORMAT_VERSION, "3");
+    sql(
+        "ALTER TABLE %s SET TBLPROPERTIES (%s)",
+        tableName, tablePropsAsString(updateFormatProperties));
+
+    // Produce a DV which will contain 3 positions from the second data file
+    // 2 existing deleted positions from the earlier file-scoped and partition-scoped deletes
+    // and 1 new deleted position
+    sql("UPDATE %s SET id = id + 1 where id = 6", commitTarget());
+
+    Table table = validationCatalog.loadTable(tableIdent);
+    Set<DeleteFile> deleteFiles =
+        TestHelpers.deleteFiles(table, SnapshotUtil.latestSnapshot(table, branch));
+    List<DeleteFile> dvs =
+        deleteFiles.stream().filter(ContentFileUtil::isDV).collect(Collectors.toList());
+    assertThat(dvs).hasSize(1);
+    assertThat(dvs.get(0).recordCount()).isEqualTo(3);
+    assertThat(dvs).allMatch(dv -> FileFormat.fromFileName(dv.location()) == FileFormat.PUFFIN);
+  }
+
   private void checkUpdateFileGranularity(DeleteGranularity deleteGranularity) {
     initTable("PARTITIONED BY (dep)", deleteGranularity);
 
@@ -177,7 +213,7 @@ public class TestMergeOnReadUpdate extends TestUpdate {
   }
 
   private void initTable(String partitionedBy, DeleteGranularity deleteGranularity) {
-    createAndInitTable("id INT, dep STRING", partitionedBy, null /* empty */);
+    createTableWithDeleteGranularity("id INT, dep STRING", partitionedBy, deleteGranularity);
 
     sql(
         "ALTER TABLE %s SET TBLPROPERTIES ('%s' '%s')",
