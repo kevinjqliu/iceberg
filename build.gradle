@@ -121,7 +121,7 @@ allprojects {
   }
   configurations.all {
     resolutionStrategy.dependencySubstitution {
-      substitute module('org.roaringbitmap:RoaringBitmap') using module('io.github.kevinjqliu:roaringbitmap:0.0.1-forktest-SNAPSHOT')
+      substitute module('org.roaringbitmap:RoaringBitmap') using module('io.github.kevinjqliu:roaringbitmap:1.6.1-SNAPSHOT')
     }
   }
 }
