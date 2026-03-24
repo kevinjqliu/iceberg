@@ -17,16 +17,6 @@
 # under the License.
 #
 
-# Audits GitHub Actions workflows for unpinned third-party actions.
-#
-# Actions referenced by mutable tag (e.g. `actions/checkout@v4`) can be
-# silently replaced by a compromised or force-pushed tag, allowing arbitrary
-# code execution inside CI. Pinning to a full commit SHA makes the reference
-# immutable and auditable.
-#
-# This job runs zizmor (https://docs.zizmor.sh/) in offline mode
-# and fails if any `uses:` step references an action without a commit-SHA pin.
-
 name: "Zizmor Workflow Audit"
 on:
   pull_request:
@@ -43,6 +33,11 @@ jobs:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
     - uses: astral-sh/setup-uv@0c5e2b8115b80b4c7c5ddf6ffdd634974642d182 # v5
     - name: Run zizmor audit
+      # Runs zizmor (https://docs.zizmor.sh/) in offline mode to detect
+      # unpinned third-party actions. Actions referenced by mutable tag
+      # (e.g. `actions/checkout@v4`) can be silently replaced by a
+      # compromised or force-pushed tag, allowing arbitrary code execution
+      # in CI. Pinning to a full commit SHA makes the reference immutable.
       run: |
         findings=$(uvx --from zizmor zizmor \
           --offline \
