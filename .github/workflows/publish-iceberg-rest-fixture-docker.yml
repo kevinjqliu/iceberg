@@ -64,7 +64,7 @@ jobs:
       # for tag 'apache-iceberg-1.7.1', publish image 'apache/iceberg-rest-fixture:1.7.1'
       if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
       run: |
-        echo "DOCKER_IMAGE_VERSION=`echo ${{ github.ref }} | tr -d -c 0-9.`" >> "$GITHUB_ENV"
+        echo "DOCKER_IMAGE_VERSION=`echo ${GITHUB_REF} | tr -d -c 0-9.`" >> "$GITHUB_ENV"
     - name: Set up QEMU
       uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a
     - name: Set up Docker Buildx

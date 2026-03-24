@@ -107,7 +107,10 @@ jobs:
     - run: echo -e "$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)\t$(hostname -f) $(hostname -s)" | sudo tee -a /etc/hosts
 
     - name: Run Benchmark
-      run: ./gradlew :iceberg-spark:${{ github.event.inputs.spark_version }}:jmh -PjmhIncludeRegex=${{ matrix.benchmark }} -PjmhOutputPath=benchmark/${{ matrix.benchmark }}.txt
+      run: ./gradlew :iceberg-spark:${GITHUB_EVENT_INPUTS_SPARK_VERSION}:jmh -PjmhIncludeRegex=${MATRIX_BENCHMARK} -PjmhOutputPath=benchmark/${MATRIX_BENCHMARK}.txt
+      env:
+        GITHUB_EVENT_INPUTS_SPARK_VERSION: ${{ github.event.inputs.spark_version }}
+        MATRIX_BENCHMARK: ${{ matrix.benchmark }}
 
     - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
       if: ${{ always() }}
