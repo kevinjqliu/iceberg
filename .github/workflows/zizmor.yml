@@ -24,7 +24,7 @@
 # code execution inside CI. Pinning to a full commit SHA makes the reference
 # immutable and auditable.
 #
-# This job runs zizmor (https://woodruffw.github.io/zizmor/) in offline mode
+# This job runs zizmor (https://docs.zizmor.sh/) in offline mode
 # and fails if any `uses:` step references an action without a commit-SHA pin.
 
 name: "Zizmor Workflow Audit"
