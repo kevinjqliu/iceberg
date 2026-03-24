@@ -49,23 +49,32 @@ jobs:
         with:
           repository: ${{ github.event.inputs.repo }}
           ref: ${{ github.event.inputs.ref }}
+          persist-credentials: false
       - id: set-matrix
         run: |
-          matrix=$(echo '[${{ github.event.inputs.benchmarks }}]' | jq '.[] | select(endswith("Benchmark")) | .')
+          matrix=$(echo '[${GITHUB_EVENT_INPUTS_BENCHMARKS}]' | jq '.[] | select(endswith("Benchmark")) | .')
           matrix=$(echo $matrix | sed 's/ /,/g' | sed 's/"/\"/g')
           echo "matrix=[$matrix]" >> $GITHUB_OUTPUT
           echo "foundlabel=$(echo "[$matrix]" | jq 'if . | length > 0 then true else false end')" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_EVENT_INPUTS_BENCHMARKS: ${{ github.event.inputs.benchmarks }}
 
   show-matrix:
     needs: matrix
     runs-on: ubuntu-24.04
     steps:
       - run: |
-          echo "Repo: ${{ github.event.inputs.repo }}"
-          echo "Ref: ${{ github.event.inputs.ref }}"
-          echo "Benchmarks: ${{ needs.matrix.outputs.matrix }}"
-          echo "Spark Project Version: ${{ needs.matrix.outputs.spark_version }}"
-          echo "Found Benchmarks? ${{ needs.matrix.outputs.foundlabel }}"
+          echo "Repo: ${GITHUB_EVENT_INPUTS_REPO}"
+          echo "Ref: ${GITHUB_EVENT_INPUTS_REF}"
+          echo "Benchmarks: ${NEEDS_MATRIX_OUTPUTS_MATRIX}"
+          echo "Spark Project Version: ${NEEDS_MATRIX_OUTPUTS_SPARK_VERSION}"
+          echo "Found Benchmarks? ${NEEDS_MATRIX_OUTPUTS_FOUNDLABEL}"
+        env:
+          GITHUB_EVENT_INPUTS_REPO: ${{ github.event.inputs.repo }}
+          GITHUB_EVENT_INPUTS_REF: ${{ github.event.inputs.ref }}
+          NEEDS_MATRIX_OUTPUTS_MATRIX: ${{ needs.matrix.outputs.matrix }}
+          NEEDS_MATRIX_OUTPUTS_SPARK_VERSION: ${{ needs.matrix.outputs.spark_version }}
+          NEEDS_MATRIX_OUTPUTS_FOUNDLABEL: ${{ needs.matrix.outputs.foundlabel }}
 
   run-benchmark:
     if: ${{ needs.matrix.outputs.foundlabel == 'true' }}
@@ -83,6 +92,7 @@ jobs:
       with:
         repository: ${{ github.event.inputs.repo }}
         ref: ${{ github.event.inputs.ref }}
+        persist-credentials: false
     - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
       with:
         distribution: zulu
