@@ -27,6 +27,7 @@ on:
     - '**/*.gradle'
     - '**/gradle.properties'
     - 'gradle/libs.versions.toml'
+    - 'settings.gradle'
     - '**/pom.xml'
     - '**/requirements.txt'
     - '.github/workflows/trivy-cve.yml'
@@ -35,6 +36,7 @@ on:
     - '**/*.gradle'
     - '**/gradle.properties'
     - 'gradle/libs.versions.toml'
+    - 'settings.gradle'
     - '**/pom.xml'
     - '**/requirements.txt'
     - '.github/workflows/trivy-cve.yml'
@@ -72,14 +74,6 @@ jobs:
         lock_init_script="$RUNNER_TEMP/trivy-locks.init.gradle"
         cat > "$lock_init_script" <<'EOF'
         allprojects {
-          buildscript {
-            configurations.configureEach {
-              if (it.canBeResolved) {
-                it.resolutionStrategy.activateDependencyLocking()
-              }
-            }
-          }
-
           dependencyLocking {
             lockAllConfigurations()
           }
@@ -90,15 +84,30 @@ jobs:
               assert gradle.startParameter.writeDependencyLocks : "$path must be run with --write-locks"
             }
             doLast {
-              configurations.findAll { it.canBeResolved }.each { it.resolve() }
+              configurations.findAll {
+                it.canBeResolved &&
+                  (it.name.endsWith('Classpath') || it.name.endsWith('AnnotationProcessor')) &&
+                  !it.name.startsWith('incrementalScalaAnalysis')
+              }.each { it.resolve() }
             }
           }
         }
         EOF
 
-        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAll --write-locks -Pquick=true
+        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAll --write-locks -Pquick=true --console=plain
 
-    - name: Run Trivy repo scan
+    - name: Verify generated dependency inputs
+      run: |
+        lockfiles=$(find . \( -name 'gradle.lockfile' -o -name 'settings-gradle.lockfile' \) -print | LC_ALL=C sort)
+
+        if [ -z "$lockfiles" ]; then
+          echo "No Gradle lockfiles were generated for Trivy to scan" >&2
+          exit 1
+        fi
+
+        printf 'Generated lockfiles for Trivy scan:\n%s\n' "$lockfiles"
+
+    - name: Run Trivy repo scan with generated lockfiles
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
       with:
         scan-type: 'fs'
