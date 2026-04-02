@@ -26,6 +26,7 @@ on:
     paths:
     - '**/*.gradle'
     - '**/gradle.properties'
+    - 'gradle/trivy-locks.init.gradle'
     - 'gradle/libs.versions.toml'
     - 'settings.gradle'
     - '**/pom.xml'
@@ -35,6 +36,7 @@ on:
     paths:
     - '**/*.gradle'
     - '**/gradle.properties'
+    - 'gradle/trivy-locks.init.gradle'
     - 'gradle/libs.versions.toml'
     - 'settings.gradle'
     - '**/pom.xml'
@@ -70,31 +72,7 @@ jobs:
     - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5 # zizmor: ignore[cache-poisoning] -- cache writes are restricted to the default branch by setup-gradle
 
     - name: Generate Gradle lockfiles
-      run: |
-        lock_init_script="$RUNNER_TEMP/trivy-locks.init.gradle"
-        cat > "$lock_init_script" <<'EOF'
-        allprojects {
-          dependencyLocking {
-            lockAllConfigurations()
-          }
-
-          tasks.register('resolveAndLockAll') {
-            notCompatibleWithConfigurationCache('Filters configurations at execution time')
-            doFirst {
-              assert gradle.startParameter.writeDependencyLocks : "$path must be run with --write-locks"
-            }
-            doLast {
-              configurations.findAll {
-                it.canBeResolved &&
-                  (it.name.endsWith('Classpath') || it.name.endsWith('AnnotationProcessor')) &&
-                  !it.name.startsWith('incrementalScalaAnalysis')
-              }.each { it.resolve() }
-            }
-          }
-        }
-        EOF
-
-        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAll --write-locks -Pquick=true --console=plain
+      run: ./gradlew -I gradle/trivy-locks.init.gradle -DallModules resolveAndLockAll --write-locks -Pquick=true --console=plain
 
     - name: Verify generated dependency inputs
       run: |
