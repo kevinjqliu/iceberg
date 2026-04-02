@@ -107,15 +107,91 @@ jobs:
 
         printf 'Generated lockfiles for Trivy scan:\n%s\n' "$lockfiles"
 
-    - name: Show Trivy findings
+    - name: Generate Trivy findings report
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
       with:
         scan-type: 'fs'
         scan-ref: '.'
         ignore-unfixed: 'true'
-        format: 'table'
+        format: 'json'
+        output: 'trivy-results.json'
         severity: 'HIGH,CRITICAL'
+        exit-code: '0'
         hide-progress: 'true'
+
+    - name: Summarize Trivy findings
+      run: |
+        total_findings=$(jq '[.[].Vulnerabilities[]?] | length' trivy-results.json)
+        unique_vulnerabilities=$(jq '[.[].Vulnerabilities[]? | .VulnerabilityID] | unique | length' trivy-results.json)
+        affected_packages=$(jq '[.[].Vulnerabilities[]? | "\(.PkgName)@\(.InstalledVersion)" ] | unique | length' trivy-results.json)
+
+        summary_file="$RUNNER_TEMP/trivy-overview.md"
+
+        if [ "$total_findings" -eq 0 ]; then
+          {
+            echo '## Trivy overview'
+            echo
+            echo 'No HIGH/CRITICAL vulnerabilities found.'
+          } > "$summary_file"
+        else
+          {
+            echo '## Trivy overview'
+            echo
+            echo '| Metric | Count |'
+            echo '| --- | ---: |'
+            echo "| Findings | $total_findings |"
+            echo "| Unique vulnerabilities | $unique_vulnerabilities |"
+            echo "| Affected packages | $affected_packages |"
+            echo
+            echo '### Severity breakdown'
+            echo
+            echo '| Severity | Count |'
+            echo '| --- | ---: |'
+            jq -r '
+              [.[].Vulnerabilities[]?]
+              | group_by(.Severity)
+              | map({severity: .[0].Severity, count: length})
+              | sort_by([if .severity == "CRITICAL" then 0 elif .severity == "HIGH" then 1 elif .severity == "MEDIUM" then 2 elif .severity == "LOW" then 3 else 4 end, .severity])
+              | .[]
+              | "| \(.severity) | \(.count) |"
+            ' trivy-results.json
+            echo
+            echo '### Affected packages'
+            echo
+            echo '| Severity | Package | Installed | Vulns | Vulnerability IDs | Fixed |'
+            echo '| --- | --- | --- | ---: | --- | --- |'
+            jq -r '
+              [.[].Vulnerabilities[]?
+                | {
+                    severity: .Severity,
+                    severity_rank: (if .Severity == "CRITICAL" then 0 elif .Severity == "HIGH" then 1 elif .Severity == "MEDIUM" then 2 elif .Severity == "LOW" then 3 else 4 end),
+                    vulnerability: .VulnerabilityID,
+                    package: .PkgName,
+                    installed: .InstalledVersion,
+                    fixed: (.FixedVersion // "-")
+                  }]
+              | group_by([.package, .installed])
+              | map(
+                  (map(.vulnerability) | unique | sort) as $ids
+                  | {
+                      severity_rank: (map(.severity_rank) | min),
+                      highest_severity: (min_by(.severity_rank).severity),
+                      package: .[0].package,
+                      installed: .[0].installed,
+                      vulnerability_count: ($ids | length),
+                      vulnerabilities: (if ($ids | length) > 4 then (($ids[:4] | join(", ")) + ", ...") else ($ids | join(", ")) end),
+                      fixed: ([.[].fixed | select(. != "-")] | unique | if length == 0 then "-" else join(", ") end)
+                    }
+                )
+              | sort_by([.severity_rank, - .vulnerability_count, .package, .installed])
+              | .[]
+              | "| \(.highest_severity) | \(.package) | \(.installed) | \(.vulnerability_count) | \(.vulnerabilities) | \(.fixed) |"
+            ' trivy-results.json
+          } > "$summary_file"
+        fi
+
+        cat "$summary_file"
+        cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
 
     # - name: Generate Trivy SARIF and fail on findings
     #   uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
