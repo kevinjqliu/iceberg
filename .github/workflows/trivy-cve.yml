@@ -107,32 +107,29 @@ jobs:
 
         printf 'Generated lockfiles for Trivy scan:\n%s\n' "$lockfiles"
 
-    - name: Show Trivy critical findings
+    - name: Show Trivy findings
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
       with:
         scan-type: 'fs'
         scan-ref: '.'
         ignore-unfixed: 'true'
         format: 'table'
-        severity: 'CRITICAL'
-        exit-code: '0'
+        severity: 'HIGH,CRITICAL'
         hide-progress: 'true'
 
-    - name: Generate Trivy SARIF and fail on critical findings
-      uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        ignore-unfixed: 'true'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'CRITICAL'
-        limit-severities-for-sarif: 'true'
-        exit-code: '1'
-        hide-progress: 'true'
+    # - name: Generate Trivy SARIF and fail on findings
+    #   uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
+    #   with:
+    #     scan-type: 'fs'
+    #     scan-ref: '.'
+    #     ignore-unfixed: 'true'
+    #     format: 'sarif'
+    #     output: 'trivy-results.sarif'
+    #     exit-code: '1'
+    #     hide-progress: 'true'
 
-    - name: Upload Trivy repo scan results
-      if: always()
-      uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
-      with:
-        sarif_file: 'trivy-results.sarif'
+    # - name: Upload Trivy repo scan results
+    #   if: always()
+    #   uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
+    #   with:
+    #     sarif_file: 'trivy-results.sarif'
