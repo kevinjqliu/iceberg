@@ -52,17 +52,73 @@ concurrency:
 jobs:
   trivy-cve-scan:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
     steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       with:
         persist-credentials: false
 
-    - name: Run Trivy CVE scan
+    - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
+      with:
+        distribution: zulu
+        java-version: 17
+
+    - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5 # zizmor: ignore[cache-poisoning] -- cache writes are restricted to the default branch by setup-gradle
+
+    - name: Generate Gradle lockfiles
+      run: |
+        lock_init_script="$RUNNER_TEMP/trivy-locks.init.gradle"
+        cat > "$lock_init_script" <<'EOF'
+        allprojects {
+          buildscript {
+            configurations.configureEach {
+              if (it.canBeResolved) {
+                it.resolutionStrategy.activateDependencyLocking()
+              }
+            }
+          }
+
+          dependencyLocking {
+            lockAllConfigurations()
+          }
+
+          tasks.register('resolveAndLockAll') {
+            notCompatibleWithConfigurationCache('Filters configurations at execution time')
+            doFirst {
+              assert gradle.startParameter.writeDependencyLocks : "$path must be run with --write-locks"
+            }
+            doLast {
+              configurations.findAll { it.canBeResolved }.each { it.resolve() }
+            }
+          }
+        }
+
+        gradle.projectsEvaluated {
+          rootProject.tasks.register('resolveAndLockAllProjects') {
+            dependsOn gradle.allprojects.collect { it.tasks.named('resolveAndLockAll') }
+          }
+        }
+        EOF
+
+        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAllProjects --write-locks -Pquick=true
+
+    - name: Run Trivy repo scan
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
       with:
         scan-type: 'fs'
         scan-ref: '.'
-        scanners: 'vuln'
-        severity: 'HIGH,CRITICAL'
+        ignore-unfixed: 'true'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL'
+        limit-severities-for-sarif: 'true'
         exit-code: '1'
         hide-progress: 'true'
+
+    - name: Upload Trivy repo scan results
+      if: always()
+      uses: github/codeql-action/upload-sarif@c10b8064de6f491fea524254123dbe5e09572f13 # v4
+      with:
+        sarif_file: 'trivy-results.sarif'
