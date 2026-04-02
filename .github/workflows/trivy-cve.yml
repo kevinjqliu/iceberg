@@ -107,7 +107,18 @@ jobs:
 
         printf 'Generated lockfiles for Trivy scan:\n%s\n' "$lockfiles"
 
-    - name: Run Trivy repo scan with generated lockfiles
+    - name: Show Trivy critical findings
+      uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        ignore-unfixed: 'true'
+        format: 'table'
+        severity: 'CRITICAL'
+        exit-code: '0'
+        hide-progress: 'true'
+
+    - name: Generate Trivy SARIF and fail on critical findings
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
       with:
         scan-type: 'fs'
