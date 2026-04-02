@@ -121,9 +121,30 @@ jobs:
 
     - name: Summarize Trivy findings
       run: |
-        total_findings=$(jq '[.[].Vulnerabilities[]?] | length' trivy-results.json)
-        unique_vulnerabilities=$(jq '[.[].Vulnerabilities[]? | .VulnerabilityID] | unique | length' trivy-results.json)
-        affected_packages=$(jq '[.[].Vulnerabilities[]? | "\(.PkgName)@\(.InstalledVersion)" ] | unique | length' trivy-results.json)
+        total_findings=$(jq '
+          def findings:
+            if type == "array" then [.[].Vulnerabilities[]?]
+            elif has("Results") then [.Results[]?.Vulnerabilities[]?]
+            else [.Vulnerabilities[]?]
+            end;
+          findings | length
+        ' trivy-results.json)
+        unique_vulnerabilities=$(jq '
+          def findings:
+            if type == "array" then [.[].Vulnerabilities[]?]
+            elif has("Results") then [.Results[]?.Vulnerabilities[]?]
+            else [.Vulnerabilities[]?]
+            end;
+          [findings[] | .VulnerabilityID] | unique | length
+        ' trivy-results.json)
+        affected_packages=$(jq '
+          def findings:
+            if type == "array" then [.[].Vulnerabilities[]?]
+            elif has("Results") then [.Results[]?.Vulnerabilities[]?]
+            else [.Vulnerabilities[]?]
+            end;
+          [findings[] | "\(.PkgName)@\(.InstalledVersion)"] | unique | length
+        ' trivy-results.json)
 
         summary_file="$RUNNER_TEMP/trivy-overview.md"
 
@@ -148,7 +169,13 @@ jobs:
             echo '| Severity | Count |'
             echo '| --- | ---: |'
             jq -r '
-              [.[].Vulnerabilities[]?]
+              def findings:
+                if type == "array" then [.[].Vulnerabilities[]?]
+                elif has("Results") then [.Results[]?.Vulnerabilities[]?]
+                else [.Vulnerabilities[]?]
+                end;
+              findings
+              | sort_by(.Severity)
               | group_by(.Severity)
               | map({severity: .[0].Severity, count: length})
               | sort_by([if .severity == "CRITICAL" then 0 elif .severity == "HIGH" then 1 elif .severity == "MEDIUM" then 2 elif .severity == "LOW" then 3 else 4 end, .severity])
@@ -161,7 +188,12 @@ jobs:
             echo '| Severity | Package | Installed | Vulns | Vulnerability IDs | Fixed |'
             echo '| --- | --- | --- | ---: | --- | --- |'
             jq -r '
-              [.[].Vulnerabilities[]?
+              def findings:
+                if type == "array" then [.[].Vulnerabilities[]?]
+                elif has("Results") then [.Results[]?.Vulnerabilities[]?]
+                else [.Vulnerabilities[]?]
+                end;
+              [findings[]
                 | {
                     severity: .Severity,
                     severity_rank: (if .Severity == "CRITICAL" then 0 elif .Severity == "HIGH" then 1 elif .Severity == "MEDIUM" then 2 elif .Severity == "LOW" then 3 else 4 end),
