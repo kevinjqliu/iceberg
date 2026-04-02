@@ -126,7 +126,7 @@ Notice: # Notices for Jakarta Activation
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.module  Name: jackson-module-jaxb-annotations  Version: 2.19.2
+Group: com.fasterxml.jackson.module  Name: jackson-module-jaxb-annotations  Version: 2.21.2
 
 Notice: # Jackson JSON processor
 
@@ -336,7 +336,7 @@ Notice:
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.core  Name: jackson-core  Version: 2.19.2
+Group: com.fasterxml.jackson.core  Name: jackson-core  Version: 2.21.2
 Group: software.amazon.awssdk  Name: third-party-jackson-core  Version: 2.33.0
 
 Notice: 
@@ -375,7 +375,7 @@ Notice:
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.datatype  Name: jackson-datatype-jsr310  Version: 2.19.2
+Group: com.fasterxml.jackson.datatype  Name: jackson-datatype-jsr310  Version: 2.21.2
 
 Notice: 
 | # Jackson JSON processor
@@ -477,8 +477,8 @@ Notice:
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.core  Name: jackson-annotations  Version: 2.19.2
-Group: com.fasterxml.jackson.core  Name: jackson-databind  Version: 2.19.2
+Group: com.fasterxml.jackson.core  Name: jackson-annotations  Version: 2.21
+Group: com.fasterxml.jackson.core  Name: jackson-databind  Version: 2.21.2
 
 Notice: 
 | # Jackson JSON processor
@@ -505,7 +505,7 @@ Notice:
 
 --------------------------------------------------------------------------------
 
-Group: com.fasterxml.jackson.jaxrs  Name: jackson-jaxrs-json-provider  Version: 2.19.2
+Group: com.fasterxml.jackson.jaxrs  Name: jackson-jaxrs-json-provider  Version: 2.21.2
 
 Notice: 
 | # Jackson JSON processor
