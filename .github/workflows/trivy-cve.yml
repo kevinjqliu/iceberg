@@ -94,15 +94,9 @@ jobs:
             }
           }
         }
-
-        gradle.projectsEvaluated {
-          rootProject.tasks.register('resolveAndLockAllProjects') {
-            dependsOn gradle.allprojects.collect { it.tasks.named('resolveAndLockAll') }
-          }
-        }
         EOF
 
-        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAllProjects --write-locks -Pquick=true
+        ./gradlew -I "$lock_init_script" -DallModules resolveAndLockAll --write-locks -Pquick=true
 
     - name: Run Trivy repo scan
       uses: lhotari/sandboxed-trivy-action@555963036b2012b44c1071508a236e569db28ebb # v1
