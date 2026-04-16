@@ -219,6 +219,11 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
       exclude group: 'org.antlr'
       exclude group: 'org.scala-lang'
       exclude group: 'org.scala-lang.modules'
+      exclude group: 'org.eclipse.microprofile.openapi'
+      exclude group: 'com.fasterxml.jackson.datatype', module: 'jackson-datatype-jsr310'
+      exclude group: 'org.checkerframework'
+      exclude group: 'org.eclipse.collections'
+      exclude group: 'org.locationtech.jts'
     }
   }
 
@@ -284,10 +289,7 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     relocate 'com.google.flatbuffers', 'org.apache.iceberg.shaded.com.google.flatbuffers'
     relocate 'com.fasterxml', 'org.apache.iceberg.shaded.com.fasterxml'
     relocate 'com.github.benmanes', 'org.apache.iceberg.shaded.com.github.benmanes'
-    relocate 'org.checkerframework', 'org.apache.iceberg.shaded.org.checkerframework'
     relocate 'org.apache.avro', 'org.apache.iceberg.shaded.org.apache.avro'
-    relocate 'avro.shaded', 'org.apache.iceberg.shaded.org.apache.avro.shaded'
-    relocate 'com.thoughtworks.paranamer', 'org.apache.iceberg.shaded.com.thoughtworks.paranamer'
     relocate 'org.apache.parquet', 'org.apache.iceberg.shaded.org.apache.parquet'
     relocate 'shaded.parquet', 'org.apache.iceberg.shaded.org.apache.parquet.shaded'
     relocate 'org.apache.orc', 'org.apache.iceberg.shaded.org.apache.orc'
@@ -297,10 +299,10 @@ project(":iceberg-spark:iceberg-spark-runtime-${sparkMajorVersion}_${scalaVersio
     // relocate Arrow and related deps to shade Iceberg specific version
     relocate 'io.netty', 'org.apache.iceberg.shaded.io.netty'
     relocate 'org.apache.arrow', 'org.apache.iceberg.shaded.org.apache.arrow'
-    relocate 'com.carrotsearch', 'org.apache.iceberg.shaded.com.carrotsearch'
     relocate 'org.threeten.extra', 'org.apache.iceberg.shaded.org.threeten.extra'
     relocate 'org.roaringbitmap', 'org.apache.iceberg.shaded.org.roaringbitmap'
     relocate 'org.apache.datasketches', 'org.apache.iceberg.shaded.org.apache.datasketches'
+    relocate 'dev.failsafe', 'org.apache.iceberg.shaded.dev.failsafe'
 
     archiveClassifier.set(null)
   }
