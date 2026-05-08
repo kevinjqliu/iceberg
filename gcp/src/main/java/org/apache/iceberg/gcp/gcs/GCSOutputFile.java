@@ -18,7 +18,6 @@
  */
 package org.apache.iceberg.gcp.gcs;
 
-import com.google.cloud.gcs.analyticscore.client.GcsFileSystem;
 import com.google.cloud.storage.BlobId;
 import com.google.cloud.storage.Storage;
 import java.io.IOException;
@@ -36,7 +35,7 @@ class GCSOutputFile extends BaseGCSFile implements OutputFile {
       String location, PrefixedStorage storage, MetricsContext metrics) {
     return new GCSOutputFile(
         storage.storage(),
-        storage.gcsFileSystem(),
+        storage,
         BlobId.fromGsUtilUri(location),
         storage.gcpProperties(),
         metrics);
@@ -44,11 +43,11 @@ class GCSOutputFile extends BaseGCSFile implements OutputFile {
 
   GCSOutputFile(
       Storage storage,
-      GcsFileSystem gcsFileSystem,
+      PrefixedStorage prefixedStorage,
       BlobId blobId,
       GCPProperties gcpProperties,
       MetricsContext metrics) {
-    super(storage, gcsFileSystem, blobId, gcpProperties, metrics);
+    super(storage, prefixedStorage, blobId, gcpProperties, metrics);
   }
 
   /**
@@ -77,6 +76,7 @@ class GCSOutputFile extends BaseGCSFile implements OutputFile {
 
   @Override
   public InputFile toInputFile() {
-    return new GCSInputFile(storage(), gcsFileSystem(), blobId(), null, gcpProperties(), metrics());
+    return new GCSInputFile(
+        storage(), prefixedStorage(), blobId(), null, gcpProperties(), metrics());
   }
 }

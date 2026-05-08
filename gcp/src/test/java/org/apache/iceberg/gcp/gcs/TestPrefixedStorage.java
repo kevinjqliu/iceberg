@@ -125,7 +125,8 @@ public class TestPrefixedStorage {
             GCPProperties.GCS_SERVICE_HOST, "example.com",
             GCPProperties.GCS_DECRYPTION_KEY, "decryptionKey",
             GCPProperties.GCS_ENCRYPTION_KEY, "encryptionKey",
-            GCPProperties.GCS_CHANNEL_READ_CHUNK_SIZE, "1024");
+            GCPProperties.GCS_CHANNEL_READ_CHUNK_SIZE, "1024",
+            GCPProperties.GCS_ANALYTICS_CORE_ENABLED, "true");
     PrefixedStorage storage = new PrefixedStorage("gs://bucket", properties, null);
     GcsFileSystemOptions expectedOptions =
         GcsFileSystemOptions.builder()
@@ -144,7 +145,7 @@ public class TestPrefixedStorage {
                     .build())
             .build();
 
-    GcsFileSystem fileSystem = storage.gcsFileSystem();
+    GcsFileSystem fileSystem = (GcsFileSystem) storage.gcsFileSystem();
 
     assertThat(fileSystem).isNotNull();
     assertThat(fileSystem.getGcsClient()).isNotNull();
