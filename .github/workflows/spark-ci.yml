@@ -79,18 +79,13 @@ jobs:
       fail-fast: false
       max-parallel: 15
       matrix:
-        jvm: [17, 21]
-        spark: ['3.4', '3.5', '4.0', '4.1']
-        scala: ['2.12', '2.13']
-        exclude:
-          # Spark 3.5 is the first version not failing on Java 21 (https://issues.apache.org/jira/browse/SPARK-42369)
-          # Full Java 21 support is coming in Spark 4 (https://issues.apache.org/jira/browse/SPARK-43831)
-          - jvm: 21
-            spark: '3.4'
-          - spark: '4.0'
-            scala: '2.12'
-          - spark: '4.1'
-            scala: '2.12'
+        # TEMP for branch validation: single cell that previously failed with
+        # "No space left on device". Restore full matrix before opening the
+        # upstream PR.
+        jvm: [21]
+        spark: ['3.5']
+        scala: ['2.13']
+        exclude: []
     env:
       SPARK_LOCAL_IP: localhost
     steps:
