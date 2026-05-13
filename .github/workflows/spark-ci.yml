@@ -76,6 +76,7 @@ jobs:
   spark-tests:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false
       max-parallel: 15
       matrix:
         jvm: [17, 21]
@@ -96,21 +97,62 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+      # Must run BEFORE setup-java: tool-cache: true wipes /opt/hostedtoolcache
+      # which is where setup-java installs the JDK and points JAVA_HOME at.
+      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          # Free as much disk as possible: Spark tests + restored Gradle cache
+          # routinely fill the runner's 14 GB root disk and crash the runner
+          # agent itself (writes to /home/runner/actions-runner/_diag fail with
+          # "No space left on device", which cascade-cancels the whole matrix).
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+      # Move /tmp and the Gradle home to the 75 GiB /mnt volume (Azure
+      # ephemeral SSD on GitHub-hosted runners). The root volume is only
+      # ~14 GiB, which Spark tests + restored Gradle cache routinely fill.
+      # Bind-mounting /tmp transparently redirects every JUnit @TempDir,
+      # File.createTempFile, Spark shuffle, and Hadoop tmp write to /mnt
+      # without any code changes. GRADLE_USER_HOME relocates the ~3 GiB
+      # restored Gradle cache and all build-cache growth to /mnt as well.
+      # Must run BEFORE setup-gradle so the cache is restored to the new
+      # location instead of ~/.gradle on the small root volume.
+      - name: Move /tmp and Gradle home to /mnt (75 GiB volume)
+        run: |
+          sudo mkdir -p /mnt/tmp /mnt/gradle
+          sudo chmod 1777 /mnt/tmp
+          sudo chown "$USER:$USER" /mnt/gradle
+          sudo mount --bind /mnt/tmp /tmp
+          echo "GRADLE_USER_HOME=/mnt/gradle" >> "$GITHUB_ENV"
+          df -h /tmp /mnt
       - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
         with:
           distribution: zulu
           java-version: ${{ matrix.jvm }}
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: false
+      - name: Disk space before build
+        run: df -h
       - run: echo -e "$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)\t$(hostname -f) $(hostname -s)" | sudo tee -a /etc/hosts
-      - run: |
+      - name: Run Gradle :check
+        run: |
           ./gradlew -DsparkVersions=${{ matrix.spark }} -DscalaVersion=${{ matrix.scala }} -DflinkVersions= -DkafkaVersions= \
             :iceberg-spark:iceberg-spark-${{ matrix.spark }}_${{ matrix.scala }}:check \
             :iceberg-spark:iceberg-spark-extensions-${{ matrix.spark }}_${{ matrix.scala }}:check \
             :iceberg-spark:iceberg-spark-runtime-${{ matrix.spark }}_${{ matrix.scala }}:check \
             -Pquick=true -x javadoc
+      - name: Disk space after build
+        if: always()
+        run: |
+          df -h
+          echo "--- Top disk consumers ---"
+          du -sh "$GRADLE_USER_HOME" 2>/dev/null || true
+          du -sh /mnt/tmp 2>/dev/null || true
+          du -sh build 2>/dev/null || true
+          # Largest build output dirs across all subprojects
+          du -sh */build **/build 2>/dev/null | sort -rh | head -20 || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
