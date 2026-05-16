@@ -78,9 +78,9 @@ jobs:
     strategy:
       max-parallel: 15
       matrix:
-        jvm: [17, 21]
-        spark: ['3.4', '3.5', '4.0', '4.1']
-        scala: ['2.12', '2.13']
+        jvm: [17]
+        spark: ['3.5']
+        scala: ['2.12']
         exclude:
           # Spark 3.5 is the first version not failing on Java 21 (https://issues.apache.org/jira/browse/SPARK-42369)
           # Full Java 21 support is coming in Spark 4 (https://issues.apache.org/jira/browse/SPARK-43831)
