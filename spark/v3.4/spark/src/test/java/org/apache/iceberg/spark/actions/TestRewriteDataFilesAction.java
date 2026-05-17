@@ -294,7 +294,7 @@ public class TestRewriteDataFilesAction extends TestBase {
   public void testBinPackAfterPartitionChange() {
     Table table = createTable();
 
-    writeRecords(20, SCALE, 20);
+    writeRecords(20, SMALL_SCALE, 20);
     table.refresh();
     shouldHaveFiles(table, 20);
     table.updateSpec().addField(Expressions.ref("c1")).commit();
@@ -1620,7 +1620,7 @@ public class TestRewriteDataFilesAction extends TestBase {
   public void testSortCustomSortOrderRequiresRepartition() throws IOException {
     int partitions = 4;
     Table table = createTable();
-    writeRecords(20, SCALE, partitions);
+    writeRecords(20, SMALL_SCALE, partitions);
     table.refresh();
     shouldHaveLastCommitUnsorted(table, "c3");
 
