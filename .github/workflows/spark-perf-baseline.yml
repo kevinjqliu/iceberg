@@ -1,0 +1,125 @@
+# Temporary perf-measurement workflow. Not for upstream.
+# Runs a fixed set of slow Spark test classes against a single representative
+# matrix cell (jvm=17, spark=3.5, scala=2.13) and emits a markdown summary of
+# per-class wall times to $GITHUB_STEP_SUMMARY. Trigger via `gh workflow run`.
+
+name: "Spark Perf Baseline"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spark-perf:
+    runs-on: ubuntu-24.04
+    env:
+      SPARK_LOCAL_IP: localhost
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+        with:
+          distribution: zulu
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: true
+      - uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+      - run: echo -e "$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)\t$(hostname -f) $(hostname -s)" | sudo tee -a /etc/hosts
+
+      - name: Run candidate test classes
+        run: |
+          ./gradlew --continue \
+            -DsparkVersions=3.5 -DscalaVersion=2.13 -DflinkVersions= -DkafkaVersions= \
+            -Pquick=true -x javadoc \
+            :iceberg-spark:iceberg-spark-3.5_2.13:test \
+              --tests "org.apache.iceberg.spark.source.TestStructuredStreamingRead3" \
+              --tests "org.apache.iceberg.spark.source.TestAvroDataFrameWrite" \
+              --tests "org.apache.iceberg.spark.source.TestParquetDataFrameWrite" \
+              --tests "org.apache.iceberg.spark.source.TestORCDataFrameWrite" \
+              --tests "org.apache.iceberg.spark.source.TestParquetScan" \
+              --tests "org.apache.iceberg.spark.source.TestParquetVectorizedScan" \
+              --tests "org.apache.iceberg.spark.source.TestAvroScan" \
+              --tests "org.apache.iceberg.spark.data.vectorized.parquet.TestParquetDictionaryFallbackToPlainEncodingVectorizedReads" \
+              --tests "org.apache.iceberg.spark.actions.TestRewriteDataFilesAction" \
+              --tests "org.apache.iceberg.spark.actions.TestRewriteTablePathsAction" \
+              --tests "org.apache.iceberg.spark.source.TestSparkDataFile" \
+            :iceberg-spark:iceberg-spark-extensions-3.5_2.13:test \
+              --tests "org.apache.iceberg.spark.extensions.TestMergeOnReadMerge" \
+              --tests "org.apache.iceberg.spark.extensions.TestMergeOnReadDelete" \
+              --tests "org.apache.iceberg.spark.extensions.TestCopyOnWriteUpdate" \
+            :iceberg-spark:iceberg-spark-runtime-3.5_2.13:integrationTest \
+              --tests "org.apache.iceberg.spark.TestRoundTrip"
+
+      - name: Summarize per-class wall times
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, os, sys
+          import xml.etree.ElementTree as ET
+
+          results = []  # (module, task, class, total_time, slowest_method, slowest_time, tests, failures, errors)
+          for path in glob.glob("**/build/test-results/**/TEST-*.xml", recursive=True):
+              # path: spark/v3.5/spark/build/test-results/test/TEST-<class>.xml
+              parts = path.split(os.sep)
+              try:
+                  build_idx = parts.index("build")
+              except ValueError:
+                  continue
+              module = "/".join(parts[:build_idx])
+              # ['build','test-results',<task>,'TEST-...xml']
+              task = parts[build_idx + 2] if len(parts) > build_idx + 2 else "?"
+              try:
+                  tree = ET.parse(path)
+              except ET.ParseError:
+                  continue
+              root = tree.getroot()
+              cls = root.attrib.get("name", os.path.basename(path))
+              total = float(root.attrib.get("time", "0") or 0)
+              tests = int(root.attrib.get("tests", "0") or 0)
+              failures = int(root.attrib.get("failures", "0") or 0)
+              errors = int(root.attrib.get("errors", "0") or 0)
+              slowest_m = ""
+              slowest_t = 0.0
+              for tc in root.iter("testcase"):
+                  t = float(tc.attrib.get("time", "0") or 0)
+                  if t > slowest_t:
+                      slowest_t = t
+                      slowest_m = tc.attrib.get("name", "")
+              results.append((module, task, cls, total, slowest_m, slowest_t, tests, failures, errors))
+
+          results.sort(key=lambda r: -r[3])
+
+          print("## Per-class wall times (sorted desc)")
+          print()
+          print(f"Commit: `{os.environ.get('GITHUB_SHA','')}`  Ref: `{os.environ.get('GITHUB_REF','')}`")
+          print()
+          print("| module | task | class | total (s) | slowest method | slowest (s) | tests | fail | err |")
+          print("|---|---|---|---:|---|---:|---:|---:|---:|")
+          for module, task, cls, total, sm, st, n, f, e in results:
+              short_cls = cls.rsplit(".", 1)[-1]
+              print(f"| {module} | {task} | {short_cls} | {total:.2f} | {sm} | {st:.2f} | {n} | {f} | {e} |")
+          print()
+          grand_total = sum(r[3] for r in results)
+          grand_tests = sum(r[6] for r in results)
+          grand_fail = sum(r[7] for r in results)
+          grand_err = sum(r[8] for r in results)
+          print(f"**Sum of class totals:** {grand_total:.2f} s across {len(results)} classes, {grand_tests} testcases, {grand_fail} failures, {grand_err} errors.")
+          PY
+
+      - name: Upload test result XMLs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spark-perf-test-results-${{ github.run_id }}-${{ github.sha }}
+          path: |
+            **/build/test-results/**/*.xml
