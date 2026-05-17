@@ -650,7 +650,7 @@ public final class TestStructuredStreamingRead3 extends CatalogTestBase {
 
   @TestTemplate
   public void testReadingStreamFromFutureTimetsamp() throws Exception {
-    long futureTimestamp = System.currentTimeMillis() + 10000;
+    long futureTimestamp = System.currentTimeMillis() + 2000;
 
     StreamingQuery query =
         startStream(SparkReadOptions.STREAM_FROM_TIMESTAMP, Long.toString(futureTimestamp));

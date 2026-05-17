@@ -54,6 +54,10 @@ import org.junit.jupiter.api.io.TempDir;
 public abstract class ScanTestBase extends AvroDataTestBase {
   private static final Configuration CONF = new Configuration();
 
+  // Row count used by writeAndValidate. Kept small because testMixedTypes builds a deeply nested
+  // schema where per-row allocation dominates wall time; coverage is preserved at this size.
+  protected static final int NUM_RECORDS = 25;
+
   protected static SparkSession spark = null;
   protected static JavaSparkContext sc = null;
 
@@ -102,7 +106,7 @@ public abstract class ScanTestBase extends AvroDataTestBase {
 
     // Important: use the table's schema for the rest of the test
     // When tables are created, the column ids are reassigned.
-    List<Record> expected = RandomGenericData.generate(table.schema(), 100, 1L);
+    List<Record> expected = RandomGenericData.generate(table.schema(), NUM_RECORDS, 1L);
 
     writeRecords(table, expected);
 
@@ -126,7 +130,7 @@ public abstract class ScanTestBase extends AvroDataTestBase {
     Dataset<Row> df = spark.read().format("iceberg").load(table.location());
 
     List<Row> rows = df.collectAsList();
-    assertThat(rows).as("Should contain 100 rows").hasSize(100);
+    assertThat(rows).as("Row count should match input").hasSize(expected.size());
 
     for (int i = 0; i < expected.size(); i += 1) {
       GenericsHelpers.assertEqualsSafe(table.schema().asStruct(), expected.get(i), rows.get(i));

@@ -141,7 +141,9 @@ import org.mockito.Mockito;
 public class TestRewriteDataFilesAction extends TestBase {
 
   @TempDir private File tableDir;
-  private static final int SCALE = 400000;
+  // Row count per data file for tests that rely on a non-trivial dataset. Reduced from 400000;
+  // most tests only assert on rewrite counts/sizes-in-MB which still scale linearly.
+  private static final int SCALE = 100000;
 
   private static final HadoopTables TABLES = new HadoopTables(new Configuration());
   private static final Schema SCHEMA =

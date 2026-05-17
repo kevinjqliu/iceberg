@@ -35,7 +35,10 @@ import org.junit.jupiter.api.Test;
 
 public class TestParquetDictionaryFallbackToPlainEncodingVectorizedReads
     extends TestParquetVectorizedReads {
-  private static final int NUM_ROWS = 1_000_000;
+  // Smaller than the parent's 1M but still large enough that the 512KB dictionary cap
+  // (PARQUET_DICT_SIZE_BYTES below) forces a fallback to plain encoding, which is the
+  // scenario this class exists to exercise.
+  private static final int NUM_ROWS = 200_000;
 
   @Override
   protected int getNumRows() {
