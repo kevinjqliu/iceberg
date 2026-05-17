@@ -142,6 +142,10 @@ public class TestRewriteDataFilesAction extends TestBase {
 
   @TempDir private File tableDir;
   private static final int SCALE = 400000;
+  // Smaller row count for tests whose assertions are file-count / relative-size based (not
+  // sensitive to absolute byte offsets). Used by the partitioned createTablePartitioned helper
+  // and a couple of explicit call sites below.
+  private static final int SMALL_SCALE = 100000;
 
   private static final HadoopTables TABLES = new HadoopTables(new Configuration());
   private static final Schema SCHEMA =
@@ -856,7 +860,7 @@ public class TestRewriteDataFilesAction extends TestBase {
   @TestTemplate
   public void testBinPackWithStartingSequenceNumberV1Compatibility() {
     Map<String, String> properties = ImmutableMap.of(TableProperties.FORMAT_VERSION, "1");
-    Table table = createTablePartitioned(4, 2, SCALE, properties);
+    Table table = createTablePartitioned(4, 2, SMALL_SCALE, properties);
     shouldHaveFiles(table, 8);
     List<Object[]> expectedRecords = currentData();
     long oldSequenceNumber = table.currentSnapshot().sequenceNumber();
@@ -2326,7 +2330,7 @@ public class TestRewriteDataFilesAction extends TestBase {
     return createTablePartitioned(
         partitions,
         files,
-        SCALE,
+        SMALL_SCALE,
         ImmutableMap.of(TableProperties.FORMAT_VERSION, String.valueOf(formatVersion)));
   }
 
