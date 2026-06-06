@@ -29,6 +29,7 @@ import java.util.Map;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.InputFile;
+import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.relocated.com.google.common.collect.Iterables;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.types.Types.NestedField;
@@ -806,6 +807,43 @@ public class TestRowLineageAssignment {
         manifest,
         FILE_A.recordCount() + FILE_B.recordCount(), // FILE_C gets 225
         FILE_A.recordCount()); // FILE_B must retain its original firstRowId (125)
+  }
+
+  @Test
+  public void testRewriteManifestsAddManifestPreservesExistingFileFirstRowIds() throws IOException {
+    table.newAppend().appendFile(FILE_A).commit();
+
+    Snapshot appendSnapshot = table.currentSnapshot();
+    ManifestFile originalManifest =
+        Iterables.getOnlyElement(appendSnapshot.dataManifests(table.io()));
+    checkDataFileAssignment(table, originalManifest, 0L);
+
+    DataFile fileWithRowId =
+        DataFiles.builder(PartitionSpec.unpartitioned()).copy(FILE_A).withFirstRowId(0L).build();
+    OutputFile manifestOutput =
+        table.io().newOutputFile(new File(location, "rewrite-manifest.avro").getAbsolutePath());
+    ManifestWriter<DataFile> writer =
+        ManifestFiles.write(
+            table.operations().current().formatVersion(),
+            PartitionSpec.unpartitioned(),
+            manifestOutput,
+            -1L);
+    try {
+      writer.existing(
+          fileWithRowId, appendSnapshot.snapshotId(), appendSnapshot.sequenceNumber(), null);
+    } finally {
+      writer.close();
+    }
+
+    table
+        .rewriteManifests()
+        .deleteManifest(originalManifest)
+        .addManifest(writer.toManifestFile())
+        .commit();
+
+    ManifestFile committedManifest =
+        Iterables.getOnlyElement(table.currentSnapshot().dataManifests(table.io()));
+    checkDataFileAssignment(table, committedManifest, 0L);
   }
 
   private static ManifestContent content(int ordinal) {
