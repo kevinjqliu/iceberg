@@ -38,13 +38,13 @@ ENV CATALOG_URI=jdbc:sqlite:/tmp/iceberg_catalog.db
 ENV CATALOG_JDBC_USER=user
 ENV CATALOG_JDBC_PASSWORD=password
 ENV CATALOG_JDBC_STRICT__MODE=true
-ENV REST_PORT=8181
+ENV CATALOG_REST_PORT=8181
 
 # Healthcheck for the iceberg rest service
 HEALTHCHECK --retries=10 --interval=1s \
-  CMD curl --fail http://localhost:$REST_PORT/v1/config || exit 1
+  CMD curl --fail http://localhost:$CATALOG_REST_PORT/v1/config || exit 1
 
-EXPOSE $REST_PORT
+EXPOSE 8181
 USER iceberg:iceberg
 ENV LANG=en_US.UTF-8
 CMD ["java", "-jar", "iceberg-rest-adapter.jar"]
