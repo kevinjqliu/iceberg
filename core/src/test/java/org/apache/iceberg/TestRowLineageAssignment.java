@@ -828,17 +828,24 @@ public class TestRowLineageAssignment {
             PartitionSpec.unpartitioned(),
             manifestOutput,
             -1L);
-    try {
-      writer.existing(
+    try (ManifestWriter<DataFile> closeableWriter = writer) {
+      closeableWriter.existing(
           fileWithRowId, appendSnapshot.snapshotId(), appendSnapshot.sequenceNumber(), null);
-    } finally {
-      writer.close();
+    }
+
+    ManifestFile rewriteManifest = writer.toManifestFile();
+    assertThat(rewriteManifest.firstRowId()).isNull();
+    assertThat(rewriteManifest.snapshotId()).isEqualTo(-1L);
+
+    try (ManifestReader<DataFile> reader =
+        ManifestFiles.read(rewriteManifest, table.io(), table.specs(), false /* isCommitted */)) {
+      assertThat(Iterables.getOnlyElement(reader).firstRowId()).isEqualTo(0L);
     }
 
     table
         .rewriteManifests()
         .deleteManifest(originalManifest)
-        .addManifest(writer.toManifestFile())
+        .addManifest(rewriteManifest)
         .commit();
 
     ManifestFile committedManifest =
