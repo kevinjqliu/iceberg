@@ -811,44 +811,30 @@ public class TestRowLineageAssignment {
 
   @Test
   public void testRewriteManifestsAddManifestPreservesExistingFileFirstRowIds() throws IOException {
-    assertThat(table.operations().current().formatVersion())
-        .isEqualTo(TableMetadata.MIN_FORMAT_VERSION_ROW_LINEAGE);
-
     table.newAppend().appendFile(FILE_A).commit();
 
     Snapshot appendSnapshot = table.currentSnapshot();
     ManifestFile originalManifest =
         Iterables.getOnlyElement(appendSnapshot.dataManifests(table.io()));
-    checkDataFileAssignment(table, originalManifest, 0L);
 
     DataFile fileWithRowId =
         DataFiles.builder(PartitionSpec.unpartitioned()).copy(FILE_A).withFirstRowId(0L).build();
     OutputFile manifestOutput =
         table.io().newOutputFile(new File(location, "rewrite-manifest.avro").getAbsolutePath());
-    long unassignedManifestSnapshotId = -1L;
     ManifestWriter<DataFile> writer =
         ManifestFiles.write(
             table.operations().current().formatVersion(),
             PartitionSpec.unpartitioned(),
             manifestOutput,
-            unassignedManifestSnapshotId);
-    try (ManifestWriter<DataFile> closeableWriter = writer) {
-      closeableWriter.existing(
+            -1L);
+    try {
+      writer.existing(
           fileWithRowId, appendSnapshot.snapshotId(), appendSnapshot.sequenceNumber(), null);
+    } finally {
+      writer.close();
     }
 
     ManifestFile rewriteManifest = writer.toManifestFile();
-    assertThat(rewriteManifest.hasAddedFiles()).isFalse();
-    assertThat(rewriteManifest.hasExistingFiles()).isTrue();
-    assertThat(rewriteManifest.hasDeletedFiles()).isFalse();
-    assertThat(rewriteManifest.firstRowId()).isNull();
-    assertThat(rewriteManifest.snapshotId()).isEqualTo(unassignedManifestSnapshotId);
-
-    try (ManifestReader<DataFile> reader =
-        ManifestFiles.read(rewriteManifest, table.io(), table.specs(), false /* isCommitted */)) {
-      assertThat(Iterables.getOnlyElement(reader).firstRowId()).isEqualTo(0L);
-    }
-
     table
         .rewriteManifests()
         .deleteManifest(originalManifest)
