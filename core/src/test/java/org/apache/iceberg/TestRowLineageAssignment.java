@@ -826,8 +826,6 @@ public class TestRowLineageAssignment {
     OutputFile manifestOutput =
         table.io().newOutputFile(new File(location, "rewrite-manifest.avro").getAbsolutePath());
     long unassignedManifestSnapshotId = -1L;
-    // A manifest snapshot ID of -1, not disabled snapshot ID inheritance, forces addManifest to
-    // copy this transient rewrite manifest.
     ManifestWriter<DataFile> writer =
         ManifestFiles.write(
             table.operations().current().formatVersion(),

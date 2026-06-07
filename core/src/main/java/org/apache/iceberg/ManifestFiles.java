@@ -497,7 +497,6 @@ public class ManifestFiles {
     // for a rewritten manifest all snapshot ids should be set. use empty metadata to throw an
     // exception if it is not
     InheritableMetadata inheritableMetadata = InheritableMetadataFactory.empty();
-    // rewrite manifests are transient; null manifest-level first_row_id must not clear file IDs
     try (ManifestReader<DataFile> reader =
         new ManifestReader<>(
             toCopy,
