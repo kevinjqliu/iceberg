@@ -471,7 +471,13 @@ public class ManifestFiles {
     InheritableMetadata inheritableMetadata = InheritableMetadataFactory.forCopy(snapshotId);
     try (ManifestReader<DataFile> reader =
         new ManifestReader<>(
-            toCopy, specId, specsById, inheritableMetadata, null, FileType.DATA_FILES)) {
+            toCopy,
+            specId,
+            specsById,
+            inheritableMetadata,
+            null,
+            true /* isCommitted */,
+            FileType.DATA_FILES)) {
       return copyManifestInternal(
           formatVersion,
           null, // do not produce row IDs
