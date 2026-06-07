@@ -30,8 +30,13 @@ RUN  set -xeu && \
 # Working directory for the application
 WORKDIR /usr/lib/iceberg-rest
 
-# Copy the JAR file directly to the target location
-COPY --chown=iceberg:iceberg open-api/build/libs/iceberg-open-api-test-fixtures-runtime-*.jar /usr/lib/iceberg-rest/iceberg-rest-adapter.jar
+# Copy the REST fixture classpath and licensing files into the image
+COPY --chown=iceberg:iceberg open-api/build/docker/iceberg-rest-fixture/ /usr/lib/iceberg-rest/
+
+# Copy the cloud bundle shadow jars (built separately by their own modules)
+COPY --chown=iceberg:iceberg aws-bundle/build/libs/iceberg-aws-bundle-*.jar /usr/lib/iceberg-rest/lib/
+COPY --chown=iceberg:iceberg azure-bundle/build/libs/iceberg-azure-bundle-*.jar /usr/lib/iceberg-rest/lib/
+COPY --chown=iceberg:iceberg gcp-bundle/build/libs/iceberg-gcp-bundle-*.jar /usr/lib/iceberg-rest/lib/
 
 ENV CATALOG_CATALOG__IMPL=org.apache.iceberg.jdbc.JdbcCatalog
 ENV CATALOG_URI=jdbc:sqlite:/tmp/iceberg_catalog.db
@@ -47,4 +52,4 @@ HEALTHCHECK --retries=10 --interval=1s \
 EXPOSE 8181
 USER iceberg:iceberg
 ENV LANG=en_US.UTF-8
-CMD ["java", "-jar", "iceberg-rest-adapter.jar"]
+CMD ["java", "-cp", "lib/*", "org.apache.iceberg.rest.RESTCatalogServer"]

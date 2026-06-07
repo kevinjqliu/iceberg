@@ -58,14 +58,20 @@ docker run -e CATALOG_CATALOG_NAME=mycatalog -p 8181:8181 apache/iceberg-rest-fi
 
 ## Build the Docker Image
 
-When making changes to the local files and test them out, you can build the image locally:
+When making changes to the local files and test them out, run the following
+from the iceberg root directory:
 
 ```bash
-# Build the project from iceberg root directory
-./gradlew :iceberg-open-api:shadowJar
+# Stage the open-api classpath and build the cloud bundle shadow jars
+./gradlew \
+  :iceberg-open-api:prepareRestFixtureDockerImage \
+  :iceberg-aws-bundle:shadowJar \
+  :iceberg-azure-bundle:shadowJar \
+  :iceberg-gcp-bundle:shadowJar
 
-# Rebuild the docker image
-docker image rm -f apache/iceberg-rest-fixture && docker build -t apache/iceberg-rest-fixture -f docker/iceberg-rest-fixture/Dockerfile .
+# Build the docker image from the repo root (note the trailing dot)
+docker image rm -f apache/iceberg-rest-fixture && \
+  docker build -t apache/iceberg-rest-fixture -f docker/iceberg-rest-fixture/Dockerfile .
 ```
 
 ## Browse
@@ -115,5 +121,4 @@ Snapshots             Snapshots
 Properties            write.object-storage.enabled  true                                                                                                                        
                       write.object-storage.path     s3://iceberg-test-data/tpc/tpc-ds/3.2.0/1000/iceberg/customer/data
 ```
-
 

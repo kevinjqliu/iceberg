@@ -1076,9 +1076,26 @@ project(':iceberg-snowflake') {
 
 project(':iceberg-open-api') {
   apply plugin: 'java-test-fixtures'
-  apply plugin: 'com.gradleup.shadow'
 
-  build.dependsOn shadowJar
+  configurations {
+    // Curated classpath shipped into the REST fixture Docker image lib/ directory.
+    // Inherits from testFixturesRuntimeClasspath (consumed by Spark tests via
+    // testFixturesRuntimeElements); excludes the test-framework, annotation-only,
+    // and conflicting servlet jars that RESTCatalogServer does not load at runtime.
+    restFixtureDockerClasspath {
+      canBeConsumed = false
+      canBeResolved = true
+      extendsFrom configurations.testFixturesRuntimeClasspath
+      exclude group: 'com.google.errorprone', module: 'error_prone_annotations'
+      exclude group: 'javax.servlet', module: 'javax.servlet-api'
+      exclude group: 'javax.servlet.jsp', module: 'jsp-api'
+      exclude group: 'org.apache.hadoop', module: 'hadoop-annotations'
+      exclude group: 'org.checkerframework', module: 'checker-qual'
+      exclude group: 'org.junit.jupiter'
+      exclude group: 'org.junit.platform'
+      exclude group: 'org.opentest4j'
+    }
+  }
 
   dependencies {
     testImplementation project(':iceberg-api')
@@ -1135,10 +1152,6 @@ project(':iceberg-open-api') {
     testFixturesImplementation libs.sqlite.jdbc
 
     testFixturesCompileOnly libs.apiguardian
-
-    testFixturesRuntimeOnly project(':iceberg-aws-bundle')
-    testFixturesRuntimeOnly project(':iceberg-azure-bundle')
-    testFixturesRuntimeOnly project(':iceberg-gcp-bundle')
   }
 
   test {
@@ -1163,21 +1176,22 @@ project(':iceberg-open-api') {
   }
   check.dependsOn('validateRESTCatalogSpec')
 
-  shadowJar {
-    archiveBaseName.set("iceberg-open-api-test-fixtures-runtime")
-    archiveClassifier.set(null)
-    configurations = [project.configurations.testFixturesRuntimeClasspath]
-    from sourceSets.testFixtures.output
-    zip64 true
+  // Stages the lib/ classpath consumed by docker/iceberg-rest-fixture/Dockerfile; no runtime jar is published.
+  tasks.register('prepareRestFixtureDockerImage', Sync) {
+    group = 'build'
+    description = 'Stages the REST fixture Docker image classpath under build/docker/iceberg-rest-fixture.'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    // include the LICENSE and NOTICE files for the runtime Jar
+    into layout.buildDirectory.dir('docker/iceberg-rest-fixture')
+
     from(projectDir) {
       include 'LICENSE'
       include 'NOTICE'
     }
 
-    manifest {
-      attributes 'Main-Class': 'org.apache.iceberg.rest.RESTCatalogServer'
+    into('lib') {
+      from configurations.restFixtureDockerClasspath.filter { it.name.endsWith('.jar') }
+      from tasks.testFixturesJar
     }
   }
 
