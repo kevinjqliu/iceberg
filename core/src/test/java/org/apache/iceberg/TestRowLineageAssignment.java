@@ -811,6 +811,9 @@ public class TestRowLineageAssignment {
 
   @Test
   public void testRewriteManifestsAddManifestPreservesExistingFileFirstRowIds() throws IOException {
+    assertThat(table.operations().current().formatVersion())
+        .isEqualTo(TableMetadata.MIN_FORMAT_VERSION_ROW_LINEAGE);
+
     table.newAppend().appendFile(FILE_A).commit();
 
     Snapshot appendSnapshot = table.currentSnapshot();
@@ -822,20 +825,26 @@ public class TestRowLineageAssignment {
         DataFiles.builder(PartitionSpec.unpartitioned()).copy(FILE_A).withFirstRowId(0L).build();
     OutputFile manifestOutput =
         table.io().newOutputFile(new File(location, "rewrite-manifest.avro").getAbsolutePath());
+    long unassignedManifestSnapshotId = -1L;
+    // A manifest snapshot ID of -1, not disabled snapshot ID inheritance, forces addManifest to
+    // copy this transient rewrite manifest.
     ManifestWriter<DataFile> writer =
         ManifestFiles.write(
             table.operations().current().formatVersion(),
             PartitionSpec.unpartitioned(),
             manifestOutput,
-            -1L);
+            unassignedManifestSnapshotId);
     try (ManifestWriter<DataFile> closeableWriter = writer) {
       closeableWriter.existing(
           fileWithRowId, appendSnapshot.snapshotId(), appendSnapshot.sequenceNumber(), null);
     }
 
     ManifestFile rewriteManifest = writer.toManifestFile();
+    assertThat(rewriteManifest.hasAddedFiles()).isFalse();
+    assertThat(rewriteManifest.hasExistingFiles()).isTrue();
+    assertThat(rewriteManifest.hasDeletedFiles()).isFalse();
     assertThat(rewriteManifest.firstRowId()).isNull();
-    assertThat(rewriteManifest.snapshotId()).isEqualTo(-1L);
+    assertThat(rewriteManifest.snapshotId()).isEqualTo(unassignedManifestSnapshotId);
 
     try (ManifestReader<DataFile> reader =
         ManifestFiles.read(rewriteManifest, table.io(), table.specs(), false /* isCommitted */)) {
