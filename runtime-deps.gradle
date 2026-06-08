@@ -17,24 +17,46 @@
  * under the License.
  */
 
-// Guards the runtime dependency surface for shadow JAR modules.
+// Guards the runtime dependency surface for shipped artifacts.
 //
-// Prevents accidental transitive dependency growth in shipped shadow JARs.
+// Serves two purposes:
+//   1. Prevent accidental transitive dependency growth in published runtime
+//      classpaths.
+//   2. Provide a complete checklist of third-party works that need
+//      attribution in the project's LICENSE and NOTICE files, per Apache
+//      Software Foundation policy.
+//
 // Without this guard, adding a single catalog module as 'implementation'
 // instead of 'compileOnly' can silently leak dozens of transitive artifacts
-// into the runtime JAR, inflating its size and introducing unlicensed code.
+// into the runtime JAR or Docker image, inflating its size and introducing
+// unlicensed code.
 //
 // Apply this script in any project that ships a bundled artifact: Spark and
-// Flink runtime shadow JARs, cloud bundles (aws, azure, gcp), and Kafka
-// Connect runtime distribution.
+// Flink runtime shadow JARs, cloud bundles (aws, azure, gcp), the Kafka
+// Connect runtime distribution, and the REST fixture Docker image.
+//
+// By default the script tracks the 'runtimeClasspath' configuration. To track
+// a different configuration (e.g. a Docker image classpath), set
+// 'ext.runtimeDepsConfiguration' before applying:
+//
+//   ext.runtimeDepsConfiguration = 'restFixtureDockerImage'
+//   apply from: "${rootDir}/runtime-deps.gradle"
+//
+// 'org.apache.iceberg:*' artifacts are excluded from the baseline by default
+// because in shadow-jar bundles they get shaded into the same jar and would be
+// redundant noise. For artifacts where iceberg jars ship as distinct files in
+// the deliverable (e.g. the REST fixture Docker image), set
+// 'ext.includeIcebergDeps = true' before applying so additions or removals of
+// iceberg artifacts are also tracked.
 //
 // It adds two tasks:
 //
-//   generateRuntimeDeps  - resolves runtimeClasspath and writes a sorted
-//                          baseline of group:artifact:major.minor coordinates
-//                          to runtime-deps.txt in the project directory.
-//                          Patch versions are omitted so that routine
-//                          Dependabot bumps never cause baseline drift.
+//   generateRuntimeDeps  - resolves the configured classpath and writes a
+//                          sorted baseline of group:artifact:major.minor
+//                          coordinates to runtime-deps.txt in the project
+//                          directory. Patch versions are omitted so that
+//                          routine Dependabot bumps never cause baseline
+//                          drift.
 //
 //   checkRuntimeDeps     - compares the resolved dependencies against the
 //                          checked-in baseline and fails with a diff if
@@ -49,19 +71,29 @@
 
 def depsFile = file("${projectDir}/runtime-deps.txt")
 
+def runtimeDepsConfiguration = project.ext.has('runtimeDepsConfiguration')
+  ? project.ext.runtimeDepsConfiguration
+  : 'runtimeClasspath'
+
+def includeIcebergDeps = project.ext.has('includeIcebergDeps')
+  ? project.ext.includeIcebergDeps
+  : false
+
 def majorMinor = { version ->
   def parts = version.split('\\.')
   parts.length >= 2 ? "${parts[0]}.${parts[1]}" : version
 }
 
 def resolveRuntimeDeps = {
-  configurations.runtimeClasspath.resolvedConfiguration
+  def selfPrefix = "${project.group}:${project.name}:".toString()
+  configurations.getByName(runtimeDepsConfiguration).resolvedConfiguration
     .resolvedArtifacts
     .collect {
       def id = it.moduleVersion.id
-      "${id.group}:${id.name}:${majorMinor(id.version)}"
+      "${id.group}:${id.name}:${majorMinor(id.version)}".toString()
     }
-    .findAll { !it.startsWith('org.apache.iceberg:') }
+    .findAll { !it.startsWith(selfPrefix) }
+    .findAll { includeIcebergDeps || !it.startsWith('org.apache.iceberg:') }
     .toSorted()
     .toUnique()
 }
@@ -81,7 +113,7 @@ tasks.register('generateRuntimeDeps') {
 tasks.register('checkRuntimeDeps') {
   group = 'verification'
   description = 'Verify runtime dependencies match the checked-in baseline'
-  inputs.files(configurations.runtimeClasspath)
+  inputs.files(configurations.getByName(runtimeDepsConfiguration))
   outputs.file(depsFile)
   doLast {
     if (!depsFile.exists()) {

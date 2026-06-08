@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+#
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+"""Parse Apache-style LICENSE files into structured entries and compare them.
+
+Each LICENSE file in this project is a series of free-form sections separated
+by a line of dashes (``-`` * 80). Sections fall into a few patterns:
+
+- The Apache 2.0 license header (the long preamble at the top).
+- ``This product includes code from <Name>.`` -- forked code sections.
+- ``This product bundles <Name>.`` -- bundled-dependency sections.
+- ``Group: ... Name: ... Version: ...`` -- the older per-artifact pattern.
+
+This script extracts each section, normalizes a ``product`` key, and prints
+the result. With ``--compare``, sections sharing the same product key across
+multiple files are diffed to surface formatting drift.
+
+Usage:
+    dev/parse-license open-api/LICENSE
+    dev/parse-license --json open-api/LICENSE
+    dev/parse-license --compare open-api/LICENSE aws-bundle/LICENSE
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+SEPARATOR_RE = re.compile(r"^-{5,}\s*$")
+KIND_PATTERNS = [
+    ("bundles", re.compile(r"^This product bundles (?P<name>.+?)\.?$")),
+    ("includes_code", re.compile(r"^This product includes code from (?P<name>.+?)\.?$")),
+    ("includes", re.compile(r"^This product includes (?P<name>.+?)\.?$")),
+    ("group_artifact", re.compile(r"^Group:\s*(?P<group>\S+)\s+Name:\s*(?P<name>\S+)")),
+]
+URL_RE = re.compile(r"^(?:Project URL|Home page|URL)(?:\s*\(.*?\))?:\s*(?P<url>\S.*)$")
+LICENSE_RE = re.compile(r"^License(?:\s*\(.*?\))?:\s*(?P<license>\S.*)$")
+
+
+@dataclass
+class Entry:
+    """One section of a LICENSE file."""
+
+    source: str
+    kind: str  # one of: "preamble", "bundles", "includes_code", "includes",
+               # "group_artifact", "unknown"
+    product: str  # normalized key for cross-file comparison; empty for preamble
+    raw: str
+    urls: list[str] = field(default_factory=list)
+    licenses: list[str] = field(default_factory=list)
+
+
+def split_sections(text: str) -> list[str]:
+    """Split a LICENSE file body into sections separated by dashed lines.
+
+    Leading/trailing blank lines are stripped from each section. Empty
+    sections (which occur when separators are adjacent) are skipped.
+    """
+    sections: list[list[str]] = [[]]
+    for line in text.splitlines():
+        if SEPARATOR_RE.match(line):
+            sections.append([])
+        else:
+            sections[-1].append(line)
+    return ["\n".join(s).strip("\n") for s in sections if any(l.strip() for l in s)]
+
+
+def classify(section: str, source: str) -> Entry:
+    """Identify the section kind and extract product, URLs, and licenses."""
+    raw = section.rstrip()
+    first_non_blank = next((l for l in section.splitlines() if l.strip()), "")
+
+    # The Apache 2.0 preamble is the long block starting with the license
+    # banner. Detect by the well-known opening, not by length.
+    if "Apache License" in raw and "Version 2.0, January 2004" in raw:
+        return Entry(source=source, kind="preamble", product="", raw=raw)
+
+    kind = "unknown"
+    product = ""
+    for k, pattern in KIND_PATTERNS:
+        match = pattern.match(first_non_blank)
+        if match:
+            kind = k
+            if k == "group_artifact":
+                product = f"{match['group']}:{match['name']}"
+            else:
+                product = match["name"].strip()
+            break
+
+    urls = []
+    licenses = []
+    for line in section.splitlines():
+        url_match = URL_RE.match(line.strip())
+        if url_match:
+            urls.append(url_match["url"].strip())
+        lic_match = LICENSE_RE.match(line.strip())
+        if lic_match:
+            licenses.append(lic_match["license"].strip())
+
+    return Entry(source=source, kind=kind, product=product, raw=raw, urls=urls, licenses=licenses)
+
+
+def parse_file(path: Path) -> list[Entry]:
+    text = path.read_text(encoding="utf-8")
+    return [classify(section, str(path)) for section in split_sections(text)]
+
+
+def normalize_product(name: str) -> str:
+    """Reduce a product name to a comparable key.
+
+    Strips trailing parenthetical sub-lists ("Apache Commons (Codec, IO, ...)")
+    and incidental parenthetical notes ("Apache Parquet (bundled by AWS ...)").
+    """
+    normalized = re.sub(r"\s*\(.*?\)\s*$", "", name).strip()
+    return normalized.lower()
+
+
+def print_summary(entries: list[Entry]) -> None:
+    by_kind: dict[str, int] = {}
+    for entry in entries:
+        by_kind[entry.kind] = by_kind.get(entry.kind, 0) + 1
+    total = len(entries)
+    print(f"# {entries[0].source if entries else '?'}: {total} sections")
+    for kind in ("preamble", "bundles", "includes_code", "includes", "group_artifact", "unknown"):
+        if kind in by_kind:
+            print(f"  {kind:16s} {by_kind[kind]}")
+    print()
+    for entry in entries:
+        if entry.kind == "preamble":
+            continue
+        line = f"  [{entry.kind}] {entry.product}"
+        if entry.licenses:
+            line += f"  -- license: {'; '.join(entry.licenses)}"
+        print(line)
+
+
+def print_json(entries: list[Entry]) -> None:
+    payload = [asdict(e) for e in entries]
+    print(json.dumps(payload, indent=2))
+
+
+def compare(files: list[Path]) -> int:
+    """Report products that appear in more than one file with mismatching entries."""
+    products: dict[str, list[Entry]] = {}
+    for path in files:
+        for entry in parse_file(path):
+            if entry.kind in ("preamble", "unknown") or not entry.product:
+                continue
+            key = normalize_product(entry.product)
+            products.setdefault(key, []).append(entry)
+
+    shared = {k: v for k, v in products.items() if len({e.source for e in v}) > 1}
+    if not shared:
+        print("No products appear in more than one file.")
+        return 0
+
+    issues = 0
+    for product, entries in sorted(shared.items()):
+        sources = sorted({e.source for e in entries})
+        print(f"== {product} (appears in {len(sources)} file(s)) ==")
+        for entry in entries:
+            print(f"  -- {entry.source} --")
+            print("    product : " + entry.product)
+            print("    urls    : " + (", ".join(entry.urls) or "(none)"))
+            print("    licenses: " + (", ".join(entry.licenses) or "(none)"))
+        # Detect drift: differing display name, URL set, or license set.
+        display_names = {e.product for e in entries}
+        url_sets = {tuple(sorted(e.urls)) for e in entries}
+        license_sets = {tuple(sorted(e.licenses)) for e in entries}
+        if len(display_names) > 1 or len(url_sets) > 1 or len(license_sets) > 1:
+            print("  >> DRIFT: entries differ across files")
+            issues += 1
+        else:
+            print("  ok")
+        print()
+
+    return 1 if issues else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("files", nargs="+", type=Path, help="LICENSE file paths")
+    parser.add_argument("--json", action="store_true", help="emit parsed entries as JSON")
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="compare entries across files; exit non-zero on drift",
+    )
+    args = parser.parse_args()
+
+    for path in args.files:
+        if not path.is_file():
+            print(f"error: {path}: not a file", file=sys.stderr)
+            return 2
+
+    if args.compare:
+        return compare(args.files)
+
+    for path in args.files:
+        entries = parse_file(path)
+        if args.json:
+            print_json(entries)
+        else:
+            print_summary(entries)
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

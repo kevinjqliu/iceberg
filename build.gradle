@@ -1186,6 +1186,16 @@ project(':iceberg-open-api') {
   }
   check.dependsOn('validateRESTCatalogSpec')
 
+  // Track the runtime classpath staged into the REST fixture Docker image
+  // (everything under lib/) against runtime-deps.txt. A diff signals that
+  // open-api/LICENSE and open-api/NOTICE may need updating. Iceberg artifacts
+  // are included because the image ships them as distinct jars rather than
+  // shading them into a single fat jar; their internal contents are tracked
+  // by each bundle module's own runtime-deps.txt.
+  ext.runtimeDepsConfiguration = 'restFixtureDockerImage'
+  ext.includeIcebergDeps = true
+  apply from: "${rootDir}/runtime-deps.gradle"
+
   // Stages the lib/ classpath consumed by docker/iceberg-rest-fixture/Dockerfile; no runtime jar is published.
   tasks.register('prepareRestFixtureDockerImage', Sync) {
     group = 'build'
@@ -1197,6 +1207,21 @@ project(':iceberg-open-api') {
     from(projectDir) {
       include 'LICENSE'
       include 'NOTICE'
+    }
+
+    // Cloud bundle jars are shaded fat-jars; their LICENSE/NOTICE enumerate the
+    // third-party works shaded inside each bundle. iceberg-bundled-guava is
+    // also a shaded fat-jar (relocated Guava). Stage their LICENSE/NOTICE
+    // alongside the top-level files so the image satisfies ASF attribution
+    // policy without duplicating bundle internals in open-api/LICENSE.
+    [':iceberg-aws-bundle', ':iceberg-azure-bundle', ':iceberg-gcp-bundle', ':iceberg-bundled-guava'].each { bundlePath ->
+      def bundleProject = project(bundlePath)
+      def suffix = bundleProject.name.replaceFirst('iceberg-', '')
+      from(bundleProject.projectDir) {
+        include 'LICENSE'
+        include 'NOTICE'
+        rename { name -> "${name}.${suffix}" }
+      }
     }
 
     into('lib') {
