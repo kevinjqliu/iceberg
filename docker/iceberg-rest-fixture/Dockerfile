@@ -33,23 +33,19 @@ WORKDIR /usr/lib/iceberg-rest
 # Copy the REST fixture classpath and licensing files into the image
 COPY --chown=iceberg:iceberg open-api/build/docker/iceberg-rest-fixture/ /usr/lib/iceberg-rest/
 
-# Copy the cloud bundle shadow jars (built separately by their own modules)
-COPY --chown=iceberg:iceberg aws-bundle/build/libs/iceberg-aws-bundle-*.jar /usr/lib/iceberg-rest/lib/
-COPY --chown=iceberg:iceberg azure-bundle/build/libs/iceberg-azure-bundle-*.jar /usr/lib/iceberg-rest/lib/
-COPY --chown=iceberg:iceberg gcp-bundle/build/libs/iceberg-gcp-bundle-*.jar /usr/lib/iceberg-rest/lib/
-
-ENV CATALOG_CATALOG__IMPL=org.apache.iceberg.jdbc.JdbcCatalog
-ENV CATALOG_URI=jdbc:sqlite:/tmp/iceberg_catalog.db
-ENV CATALOG_JDBC_USER=user
-ENV CATALOG_JDBC_PASSWORD=password
-ENV CATALOG_JDBC_STRICT__MODE=true
-ENV CATALOG_REST_PORT=8181
+ENV CATALOG_CATALOG__IMPL=org.apache.iceberg.jdbc.JdbcCatalog \
+    CATALOG_URI=jdbc:sqlite:/tmp/iceberg_catalog.db \
+    CATALOG_JDBC_USER=user \
+    CATALOG_JDBC_PASSWORD=password \
+    CATALOG_JDBC_STRICT__MODE=true \
+    CATALOG_REST_PORT=8181 \
+    LANG=en_US.UTF-8
 
 # Healthcheck for the iceberg rest service
 HEALTHCHECK --retries=10 --interval=1s \
   CMD curl --fail http://localhost:$CATALOG_REST_PORT/v1/config || exit 1
 
+# Default REST port; matches CATALOG_REST_PORT above.
 EXPOSE 8181
 USER iceberg:iceberg
-ENV LANG=en_US.UTF-8
 CMD ["java", "-cp", "lib/*", "org.apache.iceberg.rest.RESTCatalogServer"]

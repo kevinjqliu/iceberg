@@ -62,12 +62,8 @@ When making changes to the local files and test them out, run the following
 from the iceberg root directory:
 
 ```bash
-# Stage the open-api classpath and build the cloud bundle shadow jars
-./gradlew \
-  :iceberg-open-api:prepareRestFixtureDockerImage \
-  :iceberg-aws-bundle:shadowJar \
-  :iceberg-azure-bundle:shadowJar \
-  :iceberg-gcp-bundle:shadowJar
+# Stage the REST fixture classpath (also builds the cloud bundle shadow jars)
+./gradlew :iceberg-open-api:prepareRestFixtureDockerImage
 
 # Build the docker image from the repo root (note the trailing dot)
 docker image rm -f apache/iceberg-rest-fixture && \

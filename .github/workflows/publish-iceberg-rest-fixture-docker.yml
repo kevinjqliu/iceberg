@@ -52,13 +52,8 @@ jobs:
       with:
         # Read-only: small job; restore opportunistically from other jobs' caches but never write.
         cache-read-only: true
-    - name: Stage REST fixture classpath and cloud bundle shadow jars
-      run: |
-        ./gradlew \
-          :iceberg-open-api:prepareRestFixtureDockerImage \
-          :iceberg-aws-bundle:shadowJar \
-          :iceberg-azure-bundle:shadowJar \
-          :iceberg-gcp-bundle:shadowJar
+    - name: Stage REST fixture Docker image classpath
+      run: ./gradlew :iceberg-open-api:prepareRestFixtureDockerImage
     - name: Login to Docker Hub
       env:
         DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}

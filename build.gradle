@@ -1078,19 +1078,21 @@ project(':iceberg-open-api') {
   apply plugin: 'java-test-fixtures'
 
   configurations {
-    // Curated classpath shipped into the REST fixture Docker image lib/ directory.
-    // Inherits from testFixturesRuntimeClasspath (consumed by Spark tests via
-    // testFixturesRuntimeElements); excludes the test-framework, annotation-only,
-    // and conflicting servlet jars that RESTCatalogServer does not load at runtime.
-    restFixtureDockerClasspath {
+    // Lib/ classpath staged into the REST fixture Docker image. Extends
+    // testFixturesRuntimeClasspath (also consumed by Spark tests via testFixturesRuntimeElements);
+    // cloud bundle shadow jars are added below.
+    restFixtureDockerImage {
       canBeConsumed = false
       canBeResolved = true
       extendsFrom configurations.testFixturesRuntimeClasspath
+      // Annotation-only deps not loaded at runtime.
       exclude group: 'com.google.errorprone', module: 'error_prone_annotations'
-      exclude group: 'javax.servlet', module: 'javax.servlet-api'
-      exclude group: 'javax.servlet.jsp', module: 'jsp-api'
       exclude group: 'org.apache.hadoop', module: 'hadoop-annotations'
       exclude group: 'org.checkerframework', module: 'checker-qual'
+      // Conflicts with jakarta.servlet-api consumed by Jetty 12.
+      exclude group: 'javax.servlet', module: 'javax.servlet-api'
+      exclude group: 'javax.servlet.jsp', module: 'jsp-api'
+      // Test framework — RESTCatalogServer does not need JUnit at runtime.
       exclude group: 'org.junit.jupiter'
       exclude group: 'org.junit.platform'
       exclude group: 'org.opentest4j'
@@ -1152,6 +1154,14 @@ project(':iceberg-open-api') {
     testFixturesImplementation libs.sqlite.jdbc
 
     testFixturesCompileOnly libs.apiguardian
+
+    // Cloud bundle shadow jars already contain their shaded SDK dependencies,
+    // so resolve them non-transitively to avoid duplicating dependencies in the image.
+    [':iceberg-aws-bundle', ':iceberg-azure-bundle', ':iceberg-gcp-bundle'].each { bundle ->
+      restFixtureDockerImage(project(path: bundle, configuration: 'shadow')) {
+        transitive = false
+      }
+    }
   }
 
   test {
@@ -1190,7 +1200,7 @@ project(':iceberg-open-api') {
     }
 
     into('lib') {
-      from configurations.restFixtureDockerClasspath.filter { it.name.endsWith('.jar') }
+      from configurations.restFixtureDockerImage.filter { it.name.endsWith('.jar') }
       from tasks.testFixturesJar
     }
   }
