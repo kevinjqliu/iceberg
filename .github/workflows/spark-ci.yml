@@ -17,59 +17,25 @@
 # under the License.
 #
 
+# Spark CI uses one caller workflow per Spark version so PR path filters can skip versions that
+# are not affected by a change. The test logic stays here to avoid duplication.
+#
+# Add a caller workflow for each supported Spark version. When adding one, also exclude its path
+# from the other caller workflows.
 name: "Spark CI"
 on:
-  push:
-    branches:
-    - 'main'
-    - '0.*'
-    - '1.*'
-    - '2.*'
-    tags:
-    - 'apache-iceberg-**'
-  pull_request:
-    paths-ignore:
-    - '.github/ISSUE_TEMPLATE/**'
-    - '.github/workflows/api-binary-compatibility.yml'
-    - '.github/workflows/delta-conversion-ci.yml'
-    - '.github/workflows/docs-ci.yml'
-    - '.github/workflows/flink-ci.yml'
-    - '.github/workflows/hive-ci.yml'
-    - '.github/workflows/java-ci.yml'
-    - '.github/workflows/jmh-benchmarks-ci.yml'
-    - '.github/workflows/kafka-connect-ci.yml'
-    - '.github/workflows/cve-scan.yml'
-    - '.github/workflows/labeler.yml'
-    - '.github/workflows/license-check.yml'
-    - '.github/workflows/open-api.yml'
-    - '.github/workflows/pr-title-check.yml'
-    - '.github/workflows/publish-snapshot.yml'
-    - '.github/workflows/recurring-jmh-benchmarks.yml'
-    - '.github/workflows/site-ci.yml'
-    - '.github/workflows/stale.yml'
-    - '.gitignore'
-    - '.asf.yaml'
-    - 'dev/**'
-    - 'docker/**'
-    - 'site/**'
-    - 'mr/**'
-    - 'flink/**'
-    - 'kafka-connect/**'
-    - 'docs/**'
-    - 'open-api/**'
-    - 'format/**'
-    - '.gitattributes'
-    - '**/README.md'
-    - 'CONTRIBUTING.md'
-    - '**/LICENSE'
-    - '**/NOTICE'
-    - 'doap.rdf'
+  workflow_call:
+    inputs:
+      spark-version:
+        description: Spark version to test
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: spark-${{ inputs.spark-version }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -83,7 +49,7 @@ jobs:
       matrix:
         jvm: [17, 21]
         event_name: ['${{ github.event_name }}']
-        spark: ['3.5', '4.0', '4.1']
+        spark: ['${{ inputs.spark-version }}']
         scala: ['2.12', '2.13']
         # Split iceberg-spark (core) from iceberg-spark-extensions/-runtime
         # so they run as concurrent jobs rather than serially in one job.
@@ -114,13 +80,17 @@ jobs:
           cache-read-only: true
       - run: echo -e "$(ip addr show eth0 | grep "inet\b" | awk '{print $2}' | cut -d/ -f1)\t$(hostname -f) $(hostname -s)" | sudo tee -a /etc/hosts
       - name: Run tests
+        env:
+          SPARK_VERSION: ${{ matrix.spark }}
+          SCALA_VERSION: ${{ matrix.scala }}
+          TEST_GROUP: ${{ matrix.tests }}
         run: |
-          if [[ "${{ matrix.tests }}" == "core" ]]; then
-            projects=":iceberg-spark:iceberg-spark-${{ matrix.spark }}_${{ matrix.scala }}:check"
+          if [[ "${TEST_GROUP}" == "core" ]]; then
+            projects=":iceberg-spark:iceberg-spark-${SPARK_VERSION}_${SCALA_VERSION}:check"
           else
-            projects=":iceberg-spark:iceberg-spark-extensions-${{ matrix.spark }}_${{ matrix.scala }}:check :iceberg-spark:iceberg-spark-runtime-${{ matrix.spark }}_${{ matrix.scala }}:check"
+            projects=":iceberg-spark:iceberg-spark-extensions-${SPARK_VERSION}_${SCALA_VERSION}:check :iceberg-spark:iceberg-spark-runtime-${SPARK_VERSION}_${SCALA_VERSION}:check"
           fi
-          ./gradlew -DsparkVersions=${{ matrix.spark }} -DscalaVersion=${{ matrix.scala }} -DflinkVersions= -DkafkaVersions= \
+          ./gradlew -DsparkVersions="${SPARK_VERSION}" -DscalaVersion="${SCALA_VERSION}" -DflinkVersions= -DkafkaVersions= \
             $projects -Pquick=true -x javadoc -DtestParallelism=auto
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
