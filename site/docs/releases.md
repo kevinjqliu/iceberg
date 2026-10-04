@@ -95,15 +95,8 @@ The 1.12.0 release contains bug fixes and new features. For full release notes v
     Previously, default instances printed the bare type name (`geometry` / `geography`).
     - The default AWS SDK HTTP client migrated to Apache HttpClient 5. Users who provide AWS dependencies separately must switch from `software.amazon.awssdk:apache-client` to `software.amazon.awssdk:apache5-client` ([\#18195](https://github.com/apache/iceberg/pull/18195)).
     - The REST client now retries POST requests carrying an `Idempotency-Key` on retriable errors (408, 500, 502, 503, 504) ([\#17947](https://github.com/apache/iceberg/pull/17947)).
-* Spec
-    - Add spec for expressions ([\#16652](https://github.com/apache/iceberg/pull/16652))
+* REST Spec
     - Add finer grained read restrictions as part of loadTable ([\#13879](https://github.com/apache/iceberg/pull/13879))
-    - Add relative paths to the v4 spec ([\#15630](https://github.com/apache/iceberg/pull/15630))
-    - Add content stats to the spec ([\#14234](https://github.com/apache/iceberg/pull/14234))
-    - Add optional specific-name to UDF definition model ([\#16727](https://github.com/apache/iceberg/pull/16727))
-    - Clarify variant type classification and primitive type scoping ([\#16836](https://github.com/apache/iceberg/pull/16836))
-    - Clarify decimal type serialization ([\#16798](https://github.com/apache/iceberg/pull/16798))
-    - Clarify content file uniqueness within a snapshot ([\#17198](https://github.com/apache/iceberg/pull/17198))
 * API
     - Single-value binary serialization for geometry and geography ([\#16607](https://github.com/apache/iceberg/pull/16607))
     - Define `RepairTable` action interface ([\#17399](https://github.com/apache/iceberg/pull/17399))
@@ -544,8 +537,8 @@ The 1.10.0 release contains bug fixes and new features. For full release notes v
 * REST Spec
     - Add row lineage fields ([\#13010](https://github.com/apache/iceberg/pull/13010))
     - Add encryption keys ([\#12987](https://github.com/apache/iceberg/pull/12987))
-    - remove update to enable row lineage as it is always on for V3 table ([\#12986](https://github.com/apache/iceberg/pull/12986))
-    - mark 503 as non retryable ([\#13619](https://github.com/apache/iceberg/pull/13619))
+    - Remove update to enable row lineage as it is always on for V3 table ([\#12986](https://github.com/apache/iceberg/pull/12986))
+    - Mark 503 as non retryable ([\#13619](https://github.com/apache/iceberg/pull/13619))
 * API
     - Add table metadata keys for encryption ([\#12927](https://github.com/apache/iceberg/pull/12927))
     - Add deleteFile to RowDelta API ([\#12861](https://github.com/apache/iceberg/pull/12861))
@@ -770,6 +763,7 @@ The 1.8.0 release contains bug fixes and new features. For full release notes vi
     - Spark 3.3
     - Removed Hive Runtime
 * REST Spec
+    - Add EnableRowLineage metadata update ([\#12050](https://github.com/apache/iceberg/pull/12050))
     - Document S3 cross region enabled configuration in REST spec ([\#11260](https://github.com/apache/iceberg/pull/11260))
 * API
     - Define Variant Data type ([\#11324](https://github.com/apache/iceberg/pull/11324))
@@ -1348,14 +1342,12 @@ The 1.2.0 release adds a variety of new features and bug fixes.
 Here is an overview:
 
 * Core
-    - Added AES GCM encryption stream spec ([\#5432](https://github.com/apache/iceberg/pull/5432))
     - Added support for Delta Lake to Iceberg table conversion ([\#6449](https://github.com/apache/iceberg/pull/6449), [\#6880](https://github.com/apache/iceberg/pull/6880))
     - Added support for `position_deletes` metadata table ([\#6365](https://github.com/apache/iceberg/pull/6365), [\#6716](https://github.com/apache/iceberg/pull/6716))
     - Added support for scan and commit metrics reporter that is pluggable through catalog ([\#6404](https://github.com/apache/iceberg/pull/6404), [\#6246](https://github.com/apache/iceberg/pull/6246), [\#6410](https://github.com/apache/iceberg/pull/6410))
     - Added support for branch commit for all operations ([\#4926](https://github.com/apache/iceberg/pull/4926), [\#5010](https://github.com/apache/iceberg/pull/5010))
     - Added `FileIO` support for ORC readers and writers ([\#6293](https://github.com/apache/iceberg/pull/6293))
     - Updated all actions to leverage bulk delete whenever possible ([\#6682](https://github.com/apache/iceberg/pull/6682))
-    - Updated snapshot ID definition in Puffin spec to support statistics file reuse ([\#6272](https://github.com/apache/iceberg/pull/6267))
     - Added human-readable metrics information in `files` metadata table ([\#5376](https://github.com/apache/iceberg/pull/5376))
     - Fixed incorrect Parquet row group skipping when min and max values are `NaN` ([\#6517](https://github.com/apache/iceberg/pull/6517))
     - Fixed a bug that location provider could generate paths with double slash (`//`) which is not compatible in a Hadoop file system ([\#6777](https://github.com/apache/iceberg/pull/6777))

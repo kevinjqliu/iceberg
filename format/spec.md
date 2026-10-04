@@ -28,6 +28,8 @@ Versions 1, 2 and 3 of the Iceberg spec are complete and adopted by the communit
 
 **Version 4 is under active development and has not been formally adopted.**
 
+Adoption dates and changes made after adoption are listed in [Specification Releases](https://iceberg.apache.org/spec-releases/).
+
 The format version number is incremented when new features are added that will break forward-compatibility---that is, when older readers would not read newer table features correctly. Tables may continue to be written with an older version of the spec to ensure compatibility by not using features that are not yet implemented by processing engines.
 
 ### Version 1: Analytic Data Tables

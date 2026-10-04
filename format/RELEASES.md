@@ -25,8 +25,8 @@ passes. They are not tied to the release of any implementation, so specification
 changes are tracked here rather than in the release notes of the Java or any
 other implementation.
 
-This page records changes to the specifications under the `format` directory.
-Changes to the REST catalog specification are not covered here.
+This page records changes to the Iceberg specifications, except the
+[REST Catalog Spec](https://iceberg.apache.org/rest-catalog-spec/).
 
 ## What is recorded
 
@@ -42,18 +42,21 @@ document; such changes are not repeated under each version.
 Each entry links the vote that adopted the change. Changes that do not require a
 vote, such as grammar, spelling and minor formatting fixes, are not recorded.
 
-## Table specification
+## Table Spec
 
-### Version 4
+Changes to the [Table Spec](spec.md), listed by format version.
 
-Version 4 is under development and has not been adopted. Changes are tracked in
-[Appendix E](spec.md#version-4).
+### Version 4: Metadata Structure and Representation
+
+Version 4 is under active development and has not been formally adopted.
+Changes are tracked in [Appendix E](spec.md#version-4).
 
 Main changes:
 
 * Relative locations in metadata fields
+* Writing new equality deletes is no longer allowed
 
-### Version 3
+### Version 3: Extended Types and Capabilities
 
 Adopted on 2025-05-23 ([vote](https://lists.apache.org/thread/9oncq0j0222nrm6scvm89xdq3gozg24p)).
 
@@ -72,16 +75,17 @@ Main changes:
 
 Changes since adoption:
 
-| Date | Change | Pull request | Vote |
-| ---------- | ------------------------------------------------------- | ------- | ---- |
-| 2026-08-19 | Clarify content file uniqueness within a snapshot | [#17198](https://github.com/apache/iceberg/pull/17198) | [vote](https://lists.apache.org/thread/orwny91fqyfmzx7w7p6wj7cgmndvd8r3) |
+| Date       | Change                                                              | Pull request                                           | Vote                                                                     |
+|------------|---------------------------------------------------------------------|--------------------------------------------------------|--------------------------------------------------------------------------|
+| 2026-08-27 | Clarify content file uniqueness within a snapshot                   | [#17198](https://github.com/apache/iceberg/pull/17198) | [vote](https://lists.apache.org/thread/orwny91fqyfmzx7w7p6wj7cgmndvd8r3) |
 | 2026-06-13 | Clarify the result type of the day partition transform in manifests | [#16446](https://github.com/apache/iceberg/pull/16446) | [vote](https://lists.apache.org/thread/gz432tvboxvno2v7g3l17c8tbtxckxrb) |
-| 2026-05-18 | Clarify conventions for non-default CRS in geospatial types | [#15834](https://github.com/apache/iceberg/pull/15834) | [vote](https://lists.apache.org/thread/8z0kc8vz1379lghwlcwl0jmsoym6shd7) |
-| 2025-10-14 | Clarify restrictions for geometry types | [#14250](https://github.com/apache/iceberg/pull/14250) | [vote](https://lists.apache.org/thread/v96xj6kxwclyl52d97dkcvzxytfypyp3) |
-| 2025-09-18 | Bring back `added-rows` in snapshot fields | [#14048](https://github.com/apache/iceberg/pull/14048) | [vote](https://lists.apache.org/thread/5gff76hvqy7r1lksrt9ld9h3pdp03nb5) |
-| 2025-07-31 | Correct the type of `snapshot-id` in table statistics | [#13513](https://github.com/apache/iceberg/pull/13513) | [vote](https://lists.apache.org/thread/z6loky5225j1vszorm199ywwncjwf6qz) |
+| 2026-05-18 | Clarify conventions for non-default CRS in geospatial types         | [#15834](https://github.com/apache/iceberg/pull/15834) | [vote](https://lists.apache.org/thread/8z0kc8vz1379lghwlcwl0jmsoym6shd7) |
+| 2025-10-14 | Clarify restrictions for geometry types                             | [#14250](https://github.com/apache/iceberg/pull/14250) | [vote](https://lists.apache.org/thread/v96xj6kxwclyl52d97dkcvzxytfypyp3) |
+| 2025-09-18 | Bring back `added-rows` in snapshot fields                          | [#14048](https://github.com/apache/iceberg/pull/14048) | [vote](https://lists.apache.org/thread/5gff76hvqy7r1lksrt9ld9h3pdp03nb5) |
+| 2025-07-31 | Correct the type of `snapshot-id` in table statistics               | [#13513](https://github.com/apache/iceberg/pull/13513) | [vote](https://lists.apache.org/thread/z6loky5225j1vszorm199ywwncjwf6qz) |
+| 2025-05-23 | Add details on GZIP compressed metadata files                       | [#12598](https://github.com/apache/iceberg/pull/12598) | [vote](https://lists.apache.org/thread/5d4qf18z41vjff424ktdz04sfcot8r4t) |
 
-### Version 2
+### Version 2: Row-level Deletes
 
 Adopted on 2021-08-02 ([vote](https://lists.apache.org/thread/ws2gg52d124p7bx9jgrn3kctrtfgtltp)).
 
@@ -93,58 +97,74 @@ Main changes:
 
 Changes since adoption:
 
-| Date | Change | Pull request | Vote |
-| ---------- | ------------------------------------------------------- | ------- | ---- |
-| 2025-09-15 | Deprecate position delete files with row data | [#14045](https://github.com/apache/iceberg/pull/14045) | [vote](https://lists.apache.org/thread/tfy96bqmz1bmdxr73x17w3xxj3yzs606) |
-| 2025-03-06 | Add an implementation note on `current-snapshot-id` | [#12334](https://github.com/apache/iceberg/pull/12334) | [vote](https://lists.apache.org/thread/54r4nm7qmr4vxhdpwmbx5rntynspskl7) |
-| 2025-01-24 | Document optional snapshot summary fields | [#11660](https://github.com/apache/iceberg/pull/11660) | [vote](https://lists.apache.org/thread/mz01jwt69osqxhx9d3dd9xzncv9yncd0) |
-| 2024-08-04 | Clarify file system tables | [#10833](https://github.com/apache/iceberg/pull/10833) | [vote](https://lists.apache.org/thread/1jm9zd6rtgjsvly3x099wvgdbohjn29v) |
+| Date       | Change                                                             | Pull request                                           | Vote                                                                     |
+|------------|--------------------------------------------------------------------|--------------------------------------------------------|--------------------------------------------------------------------------|
+| 2025-09-15 | Deprecate position delete files with row data                      | [#14045](https://github.com/apache/iceberg/pull/14045) | [vote](https://lists.apache.org/thread/tfy96bqmz1bmdxr73x17w3xxj3yzs606) |
+| 2025-03-06 | Add an implementation note on `current-snapshot-id`                | [#12334](https://github.com/apache/iceberg/pull/12334) | [vote](https://lists.apache.org/thread/54r4nm7qmr4vxhdpwmbx5rntynspskl7) |
+| 2025-01-24 | Document optional snapshot summary fields                          | [#11660](https://github.com/apache/iceberg/pull/11660) | [vote](https://lists.apache.org/thread/mz01jwt69osqxhx9d3dd9xzncv9yncd0) |
+| 2024-08-06 | Clarify identity partition edge cases                              | [#10835](https://github.com/apache/iceberg/pull/10835) | [vote](https://lists.apache.org/thread/d4oo95wmmoqnh5dqn60n2p1s2gdbs0fx) |
+| 2024-08-04 | Deprecate file system tables                                       | [#10833](https://github.com/apache/iceberg/pull/10833) | [vote](https://lists.apache.org/thread/1jm9zd6rtgjsvly3x099wvgdbohjn29v) |
+| 2024-07-23 | Clarify time travel                                                | [#8982](https://github.com/apache/iceberg/pull/8982)   | [vote](https://lists.apache.org/thread/dk83nqyw3snh336nszwgwfn0rdrzy01b) |
+| 2024-07-19 | Clarify which columns can be used in equality delete files         | [#8981](https://github.com/apache/iceberg/pull/8981)   | [vote](https://lists.apache.org/thread/dk83nqyw3snh336nszwgwfn0rdrzy01b) |
+| 2024-07-16 | Remove the JSON serialization of content files and file scan tasks | [#9771](https://github.com/apache/iceberg/pull/9771)   | [vote](https://lists.apache.org/thread/dplytsw3j6v6lg5rs8pws9g105xqmpt9) |
 
-### Version 1
+### Version 1: Analytic Data Tables
 
-Version 1 was adopted before specification changes were voted on, so there is no
-vote to link for the version itself.
+Version 1 was adopted before specification changes were voted on, so there is
+no vote to link for the version itself.
+
+Main changes:
+
+* Analytic tables using immutable file formats: Parquet, Avro, and ORC
 
 No changes recorded. Clarifications that also apply to v1 are listed under the
 most recent version they affect.
 
-## View specification
+## View Spec
 
-Adopted on 2022-04-03 in [#3188](https://github.com/apache/iceberg/pull/3188),
-before specification changes were voted on.
-
-No changes recorded.
-
-## Puffin specification
-
-Adopted on 2022-06-23 ([vote](https://lists.apache.org/thread/950rz31y3kr3kz0zzncwokvgzbrmmz4q)).
+The [View Spec](view-spec.md) was adopted on 2022-04-03 in
+[#3188](https://github.com/apache/iceberg/pull/3188), without a separate vote.
 
 No changes recorded.
 
-## AES GCM stream specification
+## Puffin Spec
 
-Adopted on 2022-11-27 in [#5432](https://github.com/apache/iceberg/pull/5432),
-before specification changes were voted on.
-
-No changes recorded.
-
-## SQL UDF specification
-
-Adopted on 2026-02-05 ([vote](https://lists.apache.org/thread/whbgoc325o99vm4b599f0g1owhgww2kx)).
+The [Puffin Spec](puffin-spec.md) was adopted on 2022-06-23
+([vote](https://lists.apache.org/thread/950rz31y3kr3kz0zzncwokvgzbrmmz4q)).
 
 Changes since adoption:
 
-| Date | Change | Pull request | Vote |
-| ---------- | ------------------------------------------------------- | ------- | ---- |
-| 2026-07-01 | Add optional `specific-name` to the UDF definition model | [#16727](https://github.com/apache/iceberg/pull/16727) | [vote](https://lists.apache.org/thread/75xs4trcgcpog8b2zoxpknf8bq6vfk4c) |
+| Date       | Change                                 | Pull request                                           | Vote                                                                     |
+|------------|----------------------------------------|--------------------------------------------------------|--------------------------------------------------------------------------|
+| 2024-11-02 | Add the `deletion-vector-v1` blob type | [#11238](https://github.com/apache/iceberg/pull/11238) | [vote](https://lists.apache.org/thread/gxkkpvv2n69q8xq4n3k83ykp11cb1kzn) |
 
-## Expressions specification
+## AES GCM Stream Spec
 
-Adopted on 2026-06-30 ([vote](https://lists.apache.org/thread/6wfmjhgthlykwbk3f7df4zgcm40xtm2o)).
+The [AES GCM Stream Spec](gcm-stream-spec.md) was adopted on 2022-11-27 in
+[#5432](https://github.com/apache/iceberg/pull/5432), without a separate vote.
 
 No changes recorded.
 
-## Mumbling bitmap specification
+## SQL UDF Spec
 
-A draft added on 2026-06-09 ([vote](https://lists.apache.org/thread/59bn4jty8jmtbks8td8zfqodkcpro1hw)).
-The specification has not been adopted, so its changes are not recorded here.
+The [SQL UDF Spec](udf-spec.md) was adopted on 2026-02-05
+([vote](https://lists.apache.org/thread/whbgoc325o99vm4b599f0g1owhgww2kx)).
+
+Changes since adoption:
+
+| Date       | Change                                                   | Pull request                                           | Vote                                                                     |
+|------------|----------------------------------------------------------|--------------------------------------------------------|--------------------------------------------------------------------------|
+| 2026-07-01 | Add optional `specific-name` to the UDF definition model | [#16727](https://github.com/apache/iceberg/pull/16727) | [vote](https://lists.apache.org/thread/75xs4trcgcpog8b2zoxpknf8bq6vfk4c) |
+
+## Expressions Spec
+
+The [Expressions Spec](https://github.com/apache/iceberg/blob/main/format/expressions-spec.md)
+was adopted on 2026-06-30 ([vote](https://lists.apache.org/thread/6wfmjhgthlykwbk3f7df4zgcm40xtm2o)).
+
+No changes recorded.
+
+## Mumbling Bitmap Spec
+
+The [Mumbling Bitmap Spec](mumbling-spec.md) was added as a draft on 2026-06-09
+([vote](https://lists.apache.org/thread/59bn4jty8jmtbks8td8zfqodkcpro1hw)). The specification has not been
+adopted, so its changes are not recorded here.
